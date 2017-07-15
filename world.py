@@ -14,7 +14,7 @@ import unittest
 
 from population import Population
 
-class World():
+class World(object):
     """Coordinate the delivery of offers to a population and simulation of the reaction."""
     def __init__(self,
                  realtime_tick=1.0,
