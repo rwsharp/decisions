@@ -11,7 +11,7 @@ import logging
 import unittest
 
 
-class Population():
+class Population(object):
     """Create a collection of individuals and coordinate the reaction to offers."""
     def __init__(self):
         """Initialize Population.
@@ -25,11 +25,28 @@ class Population():
         logging.info('Population initialized')
 
 
-    def simulate(self):
-        """Coordinate the simulation of individual reactions to offers."""
+    def simulate(self, start_time, end_time):
+        """Coordinate the simulation of individual reactions to offers.
+
+        simulation proceeds in one hour steps from start to end
+
+        """
+
+        # loop by 1 hour increments in simulation time
+        for t in range(start_time, end_time):
+            self.simulate()
+
         raise NotImplementedError()
 
 
+    def single_step(self):
+        """Simulate a single timestep for everybody in the population."""
+
+        # todo: parallelize this loop
+        for p in self.people:
+            p.single_step()
+
+        raise NotImplementedError()
 
 
 class TestPopulation(unittest.TestCase):
