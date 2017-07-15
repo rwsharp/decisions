@@ -10,6 +10,9 @@ indiviudals to offers.
 import logging
 import unittest
 
+import externalities
+import person
+
 
 class Population(object):
     """Create a collection of individuals and coordinate the reaction to offers."""
@@ -18,7 +21,10 @@ class Population(object):
 
         Args:
         """
-        raise NotImplementedError()
+
+        # Population parameters
+        self.population_config = population_config
+        self.population = Population(population_config)
 
         self.people = set()
 
@@ -36,8 +42,12 @@ class Population(object):
         for t in range(start_time, end_time):
             self.simulate()
 
-        raise NotImplementedError()
-
+            for t in range(n_ticks):
+                self.wait()
+                self.read_offers()
+                self.clean_offers()
+                self.simulate()
+                self.report()
 
     def single_step(self):
         """Simulate a single timestep for everybody in the population."""
@@ -47,6 +57,7 @@ class Population(object):
             p.single_step()
 
         raise NotImplementedError()
+
 
 
 class TestPopulation(unittest.TestCase):
