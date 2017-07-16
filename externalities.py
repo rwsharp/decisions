@@ -34,8 +34,6 @@ class World(object):
     """
     """Coordinate the delivery of offers to a population and simulation of the reaction."""
 
-    from population import Population
-
     def __init__(self,
                  world_time = Constants.BEGINNING_OF_TIME,
                  real_time_tick=1.0,
@@ -158,6 +156,19 @@ class Categorical(object):
             raise ValueError('ERROR - Names are unique, so only only one match is possible, but received more: {}'.format(locations[0]))
 
 
+    def set(self, name, value):
+        """Set value of named component."""
+        locations = numpy.where(self.names == name)[0]
+        n = len(locations)
+        if n == 1:
+            # found the match, set value
+            self.weights[locations[0]] = value
+        elif n > 1:
+            # because names are unique, there can only be one index if any
+            # so something went wrong if we get here
+            raise ValueError('ERROR - Names are unique, so only only one match is possible, but received more: {}'.format(locations[0]))
+
+
     def set_equal(self, other):
         """A limited equality operator to assign the names and values of other to self, resizing self if necessary."""
 
@@ -220,6 +231,16 @@ class TestCategorical(unittest.TestCase):
                        )
 
         self.assertTrue(all(comparisons))
+
+
+    def test_set(self):
+        x = self.cat_0
+        y = self.cat_1
+
+        for name in x.names:
+            y.set(name, x.get(name))
+
+        self.assertTrue(x.compare_equality(y))
 
 
     def test_set_equal(self):
@@ -332,8 +353,8 @@ class Offer(Event):
     channel = Categorical(('web', 'email', 'mobile'))
     type = Categorical(('bogo', 'discount', 'informational'))
 
-    def __init__(self, timestamp, **kwargs):
-        self.timestamp = timestamp
+    def __init__(self, timestamp_received, **kwargs):
+        self.timestamp = timestamp_received
         self.valid_from = kwargs.get('valid_from', Constants.BEGINNING_OF_TIME)
         self.valid_until = kwargs.get('valid_until', Constants.END_OF_TIME)
         self.difficulty = kwargs.get('difficulty', 0)
@@ -349,6 +370,11 @@ class Offer(Event):
 
         assert numpy.sum(self.channel.weights) > 0, 'ERROR - offer must have at least one channel'
         assert numpy.sum(self.type.weights) == 1,   'ERROR - offer must have exactly one type'
+
+
+    def is_active(self, current_time):
+        """Determine if the offer is valid at the current time."""
+        return True if self.valid_from <= current_time <= self.valid_until else False
 
 
 class TestOffer(unittest.TestCase):
@@ -367,5 +393,24 @@ class TestOffer(unittest.TestCase):
         self.assertTrue(self.offer)
 
 
+class Transaction(Event):
+    """Offer events occur when a Person receives an offer and offer an incentive to make a purchase.
 
+    timestamp: the time the offer is received
+    amount: the amount of the purchase
+    """
+
+    def __init__(self, timestamp_received, **kwargs):
+        self.timestamp = timestamp_received
+        self.amount = kwargs.get('amount', None)
+
+
+class TestTransaction(unittest.TestCase):
+    """Test class for Transaction."""
+
+    def setUp(self):
+        timestamp = 12345
+        amount = 1.0
+
+        self.transaction = Transaction(timestamp, amount=amount)
 
