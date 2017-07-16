@@ -5,6 +5,8 @@
     whereas events are extrinsic.
 """
 
+raise DeprecationWarning('WARNING - event.py has been deprecated, switch to externalities.py')
+
 import logging
 import unittest
 
