@@ -11,24 +11,35 @@ import logging
 import unittest
 
 import uuid
-import numpy as np
+import numpy
 
-from event import *
+from externalities import Constants, Categorical, Event, Offer, Transaction, World
 
 
 class Person(object):
     """Represent an individual and simulate the person's actions."""
-    taste = Categorical(('sweet', 'sour', 'salty', 'bitter', 'umami'))
-    channel = Categorical(('email', 'app', 'web'))
-    marketing_segment = Categorical(('front page', 'local', 'entertainment', 'sports', 'opinion', 'comics'))
+
+    taste_names = ('sweet', 'sour', 'salty', 'bitter', 'umami')
+    channel_names = Offer.channel.names
+    marketing_segment_names = ('front page', 'local', 'entertainment', 'sports', 'opinion', 'comics')
 
     # outlier_frequency = n * 0.0001 means that n in every 10,000 purchases is a big one
     outlier_frequency = 0.0005
 
-    def __init__(self, taste, channel, marketing_segment, offer_sensitivity, make_purchase_sensitivity):
+    def __init__(self, became_member_on, **kwargs):
         """Initialize Person.
 
-        Args:
+        became_member_on: date (cannot be missing - assigned when an individual becomes a member)
+
+        kwargs:
+            dob: date (default = 19010101 - sound silly? it happens in the real world and skews age distributions)
+            gender: M, F, O (O = other, e.g., decline to state, does not identify, etc.)
+            income: positive int, None
+            taste: categorical('sweet', 'sour', 'salty', 'bitter', 'umami')
+            channel: categorical('email', 'app', 'web')
+            marketing_segment: categorical('front page', 'local', 'entertainment', 'sports', 'opinion', 'comics')
+            offer_sensitivity: categorical
+            make_purchase_sensitivity: ???
         """
 
         ######################
@@ -36,13 +47,37 @@ class Person(object):
         ######################
 
         self.id = uuid.uuid4()
-        self.dob = None
-        self.gender = None
-        self.became_member_on = None
-        self.income = None
-        self.taste.set_equal(taste)
-        self.channel.set_equal(channel)
-        self.marketing_segment.set_equal(marketing_segment)
+        self.dob = kwargs.get('dob', '19010101') # set a sneaky default value for unknown
+        self.gender = kwargs.get('gender', None)
+        self.became_member_on = became_member_on
+        self.income = kwargs.get('income', None)
+
+        default_taste = Categorical(self.taste_names)
+        kwargs_taste = kwargs.get('taste', None)
+        if kwargs_taste is not None:
+            assert default_taste.same_names(kwargs_taste), 'ERROR - keyword argument taste must have names = {}'.format(default_taste.names)
+            self.taste = kwargs_taste
+            self.taste.set_order(default_taste.names)
+        else:
+            self.taste = default_taste
+
+        default_channel = Categorical(self.channel_names)
+        kwargs_channel = kwargs.get('channel', None)
+        if kwargs_taste is not None:
+            assert default_channel.same_names(kwargs_channel), 'ERROR - keyword argument channel must have names = {}'.format(default_channel.names)
+            self.channel = kwargs_channel
+            self.channel.set_order(default_channel)
+        else:
+            self.channel = default_channel
+
+        default_marketing_segment = Categorical(self.marketing_segment_names)
+        kwargs_marketing_segment = kwargs.get('marketing_segment')
+        if kwargs_marketing_segment is not None:
+            assert default_marketing_segment.same_names(kwargs_marketing_segment), 'ERROR - keyword argument marketing_segment must have names = {}'.format(default_marketing_segment.names)
+            self.marketing_segment = kwargs_marketing_segment
+            self.marketing_segment.set_order(kwargs_marketing_segment)
+        else:
+            self.marketing_segment = default_marketing_segment
 
         ######################
         # Extrinsic Attributes
@@ -51,20 +86,62 @@ class Person(object):
         self.last_transaction = None
         self.last_unviewed_offer = None
         self.last_viewed_offer = None
-        self.active_viewed_offer = None # only allow one offer to be active at a time, and only count as active if it's been viewed (no accidental winners) - if offers have overlapping validity periods, then last received is the winner
+        # only allow one offer to be active at a time, and only count as active if it's been viewed (no accidental
+        # winners) - if offers have overlapping validity periods, then last received is the winner
+        self.last_viewed_offer_active = None
 
         #########
         # History
         #########
 
+        # A list of events. Since events have a timestamp, this is equivalent to a time series.
         self.history = list()
 
         ###################
-        # Offer Sensitivity
+        # Sensitivity
         ###################
 
-        self.offer_sensitivity = Categorical(names=None, weights=None).set_equal(offer_sensitivity)
-        self.make_purchase_sensitivity = Categorical(names=None, weights=None).set_equal(make_purchase_sensitivity)
+        # view_offer_sensitivity
+        view_offer_sensitivity_names = numpy.concatenate((numpy.array(('offer_age',)), self.channel_names))
+        default_view_offer_sensitivity = Categorical(view_offer_sensitivity_names)
+        default_view_offer_sensitivity.set('offer_age', -1)
+        kwargs_view_offer_sensitivity = kwargs.get('view_offer_sensitivity', None)
+        if kwargs_view_offer_sensitivity is not None:
+            assert default_view_offer_sensitivity.same_names(kwargs_view_offer_sensitivity), 'ERROR - keyword argument view_offer_sensitivity must have names = {}'.format(default_view_offer_sensitivity.names)
+            self.view_offer_sensitivity = kwargs_view_offer_sensitivity
+            self.view_offer_sensitivity.set_order(default_view_offer_sensitivity.names)
+        else:
+            self.view_offer_sensitivity = default_view_offer_sensitivity
+
+        # make_purchase_sensitivity
+        make_purchase_sensitivity_names = numpy.concatenate((numpy.array(('time_since_last_transaction',
+                                                                          'time_since_last_viewed_offer',
+                                                                          'viewed_active_offer')),
+                                                             self.channel_names))
+        default_make_purchase_sensitivity = Categorical(make_purchase_sensitivity_names)
+        default_make_purchase_sensitivity.set('time_since_last_viewed_offer', -1)
+        kwargs_make_purchase_sensitivity = kwargs.get('make_purchase_sensitivity', None)
+        if kwargs_make_purchase_sensitivity is not None:
+            assert default_make_purchase_sensitivity.same_names(kwargs_make_purchase_sensitivity), 'ERROR - keyword argument make_purchase_sensitivity must have names = {}'.format(default_make_purchase_sensitivity.names)
+            self.make_purchase_sensitivity = kwargs_make_purchase_sensitivity
+            self.make_purchase_sensitivity.set_order(default_make_purchase_sensitivity.names)
+        else:
+            self.make_purchase_sensitivity = default_make_purchase_sensitivity
+
+        # purchase_amount_sensitivity
+        purchase_amount_sensitivity_names = numpy.concatenate((numpy.array(('constant',
+                                                                            'income_adjusted_purchase_sensitivity')),
+                                                               self.marketing_segment_names,
+                                                               self.taste_names))
+        default_purchase_amount_sensitivity = Categorical(purchase_amount_sensitivity_names)
+        kwargs_purchase_amount_sensitivity = kwargs.get('purchase_amount_sensitivity', None)
+        if kwargs_purchase_amount_sensitivity is not None:
+            assert default_purchase_amount_sensitivity.same_names(kwargs_purchase_amount_sensitivity), 'ERROR - keyword argument purchase_amount_sensitivity must have names = {}'.format(default_purchase_amount_sensitivity.names)
+            default_purchase_amount_sensitivity.set('income_adjusted_purchase_sensitivity', 1)
+            self.purchase_amount_sensitivity = kwargs_purchase_amount_sensitivity
+            self.purchase_amount_sensitivity.set_order(default_purchase_amount_sensitivity.names)
+        else:
+            self.purchase_amount_sensitivity = default_purchase_amount_sensitivity
 
         logging.info('Person initialized')
 
@@ -123,16 +200,13 @@ class Person(object):
         the probability decreases with time
         """
 
-
-        viewed_offer = self.view_offer(current_time)
-        if viewed_offer:
+        viewed_offer_event = self.view_offer(current_time)
+        if viewed_offer_event:
             logging.DEBUG('Viewed offer at {}: {}'.format(current_time, self.last_viewed_offer.__dict__))
 
-        made_purchase, purchase_amount = self.make_purchase(current_time)
-        if made_purchase:
-            logging.DEBUG('Made purchase at {}: {}'.format(current_time, purchase_amount))
-
-        raise NotImplementedError()
+        purchase_event = self.make_purchase(current_time)
+        if purchase_event:
+            logging.DEBUG('Made purchase at {}: {}'.format(current_time, self.last_transaction.__dict__))
 
 
     def view_offer(self, current_time):
@@ -140,23 +214,26 @@ class Person(object):
         if offer is not None:
             offer_age = current_time - offer.timestamp
         else:
-            offer_age = 0
+            # there is no offer to view, we're done here
+            return None
 
         beta = self.offer_sensitivity
-        x    = np.concatenate(np.array((offer_age,)), offer.channel.weights)
-        p = 1.0 / (1.0 + np.exp(-np.sum(beta * x)))
+        x    = numpy.concatenate(numpy.array((offer_age,)), offer.channel.weights)
+        p = 1.0 / (1.0 + numpy.exp(-numpy.sum(beta * x)))
 
         # flip a coin to decide if the offer was viewed
-        viewed_offer = True if np.random.random() < p else False
+        viewed_offer = True if numpy.random.random() < p else False
 
         if viewed_offer:
-            self.last_viewed_offers = self.last_unviewed_offer
-            self.last_unviewed_offer = None
-
-            # by setting the last viewed offer to None here, we're assuming that offers that only the most recently
+            offer_viewed = self.last_unviewed_offer
+            self.last_viewed_offers = offer_viewed
+            # by setting the last unviewed offer to None here, we're assuming that only the most recently
             # received offer will every be viewed. Once it's not at the top of the inbox, it's forgotten.
+            self.last_unviewed_offer = None
+        else:
+            offer_viewed = None
 
-        return viewed_offer
+        return offer_viewed
 
 
     def make_purchase(self, current_time):
@@ -178,35 +255,34 @@ class Person(object):
             time_since_last_viewed_offer = current_time - offer.timestamp
         else:
             # never viewed an offer, so as if it's been forever
-            time_since_last_viewed_offer = END_OF_TIME - BEGINNING_OF_TIME
+            time_since_last_viewed_offer = Constants.END_OF_TIME - Constants.BEGINNING_OF_TIME
 
         # Is last viewed offer active?
-        offer = self.viewed_active_offer
-        if offer is not None:
-            viewed_active_offer = 1
-        else:
-            viewed_active_offer = 0
+        viewed_active_offer = 1 if self.last_viewed_offer.is_active(current_time) else 0
 
         beta = self.make_purchase_sensitivity
-        x    = np.concatenate((np.array((time_since_last_transaction,
-                                         time_since_last_viewed_offer,
-                                         viewed_active_offer)),
-                               offer.channel.weights))
-        p = 1.0 / (1.0 + np.exp(-np.sum(beta * x)))
+        x    = numpy.concatenate((numpy.array((time_since_last_transaction,
+                                               time_since_last_viewed_offer,
+                                               viewed_active_offer)),
+                                  offer.channel.weights))
+        p = 1.0 / (1.0 + numpy.exp(-numpy.sum(beta * x)))
 
         # flip a coin to decide if a purchase was made
-        made_purchase = True if np.random.random() < p else False
+        made_purchase = True if numpy.random.random() < p else False
 
         if made_purchase:
             # Determine if this is an outlier order or regular order
-            if np.random.random() < self.outlier_frequency:
+            if numpy.random.random() < self.outlier_frequency:
                 purchase_amount = self.outlier_purchase_amount()
             else:
                 purchase_amount = self.purchase_amount()
-        else:
-            purchase_amount = None
 
-        return (made_purchase, purchase_amount)
+            transaction = Transaction(timestamp=current_time, amount=purchase_amount)
+            self.last_transaction = transaction
+        else:
+            transaction = None
+
+        return transaction
 
 
     def purchase_amount(self, current_time):
@@ -240,12 +316,12 @@ class Person(object):
         income_adjusted_purchase_sensitivity = min_mean_purchase + slope*adjusted_income
 
         beta = self.purchase_amount_sensitivity
-        x = np.concatenate((np.array((1,
-                                      income_adjusted_purchase_sensitivity)),
-                            self.marketing_segment.weights,
-                            self.taste.weights))
+        x = numpy.concatenate((numpy.array((1,
+                                            income_adjusted_purchase_sensitivity)),
+                               self.marketing_segment.weights,
+                               self.taste.weights))
 
-        mean = np.sum(beta * x)
+        mean = numpy.sum(beta * x)
 
         # simple relationship between mean and var reflects the increased options for purchase to achieve higher mean
         var = 2.0 * mean
@@ -258,7 +334,7 @@ class Person(object):
 
         # minimum purchase is $0.05
         # all purchases are rounded to a whole number of cents
-        z = max(0.05, round(np.random.gamma(shape=k, scale=theta, size=None), 2))
+        z = max(0.05, round(numpy.random.gamma(shape=k, scale=theta, size=None), 2))
 
         # todo: add outliers from a different distribution
 
@@ -270,6 +346,10 @@ class TestPerson(unittest.TestCase):
     """Test class for Person."""
 
     def setUp(self):
-        self.Person = Person()
+        self.person = Person(became_member_on=12345)
+
+
+    def test_person(self):
+        self.assertTrue(self.person)
 
 
