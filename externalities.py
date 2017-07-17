@@ -247,7 +247,6 @@ class Categorical(object):
         return cat
 
 
-
 class TestCategorical(unittest.TestCase):
     """Test class for Categorical."""
 
@@ -333,7 +332,6 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(cat_reconstituted_dict == cat_dict)
 
 
-
 class Event(object):
     """Events are the actions and interactions that occur with respect to a Person.
 
@@ -360,6 +358,7 @@ class Event(object):
         kwargs_name_set = set(kwargs.keys())
         assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: {}'.format(kwargs_name_set.difference(valid_kwargs))
 
+        self.type = 'event'
         self.id = kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
         self.timestamp = timestamp
         self.value = kwargs.get('value', None)
@@ -371,7 +370,8 @@ class Event(object):
 
     def to_serializable(self):
         """Create a serializable representation."""
-        event_dict = {'id':        self.id,
+        event_dict = {'type':      self.type,
+                      'id':        self.id,
                       'timestamp': self.timestamp,
                       'value':     self.value}
 
@@ -380,8 +380,9 @@ class Event(object):
 
     @staticmethod
     def from_dict(event_dict):
-        event = Event(      event_dict.get('timestamp'), \
-                            id   =event_dict.get('id'), \
+        assert event_dict.get('type') == 'event', 'ERROR - Dictionary must assert that it represents an Event, but type is {}.'.format(event_dict.get('type'))
+        event = Event(            event_dict.get('timestamp'), \
+                            id   =event_dict.get('id'),        \
                             value=event_dict.get('value'))
 
         return event
@@ -461,13 +462,14 @@ class Offer(Event):
     """
 
     channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 1))
-    type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
+    offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
 
     def __init__(self, timestamp_received, **kwargs):
-        valid_kwargs = set(('id', 'valid_from', 'valid_until', 'difficulty', 'reward', 'channel', 'type'))
+        valid_kwargs = set(('id', 'valid_from', 'valid_until', 'difficulty', 'reward', 'channel', 'offer_type'))
         kwargs_name_set = set(kwargs.keys())
         assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: {}'.format(kwargs_name_set.difference(valid_kwargs))
 
+        self.type = 'offer'
         self.id = kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
         self.timestamp = timestamp_received
         self.valid_from = kwargs.get('valid_from', Constants.BEGINNING_OF_TIME)
@@ -479,39 +481,40 @@ class Offer(Event):
         if x is not None:
             self.channel.set_equal(x)
 
-        x = kwargs.get('type')
+        x = kwargs.get('offer_type')
         if x is not None:
-            self.type.set_equal(x)
+            self.offer_type.set_equal(x)
 
         assert numpy.sum(self.channel.weights) > 0, 'ERROR - offer must have at least one channel'
-        assert numpy.sum(self.type.weights) == 1,   'ERROR - offer must have exactly one type'
+        assert numpy.sum(self.offer_type.weights) == 1,   'ERROR - offer must have exactly one offer_type'
 
 
     def to_serializable(self):
-        offer_dict = {'timestamp':   self.timestamp,
+        offer_dict = {'type':        self.type,
+                      'timestamp':   self.timestamp,
                       'id':          self.id,
                       'valid_from':  self.valid_from,
                       'valid_until': self.valid_until,
                       'difficulty':  self.difficulty,
                       'reward':      self.reward,
                       'channel':     self.channel.to_serializable(),
-                      'type':        self.type.to_serializable()
+                      'offer_type':  self.offer_type.to_serializable()
                       }
 
         return offer_dict
 
     @staticmethod
     def from_dict(offer_dict):
-        stop = 1
+        assert offer_dict.get('type') == 'offer', 'ERROR - Dictionary must assert that it represents an Offer, but type is {}.'.format(offer_dict.get('type'))
 
-        offer = Offer(            offer_dict.get('timestamp'), \
-                                  id         =offer_dict.get('id'), \
-                                  valid_from =offer_dict.get('valid_from'), \
-                                  valid_until=offer_dict.get('valid_until'), \
-                                  difficulty =offer_dict.get('difficulty'), \
-                                  reward     =offer_dict.get('reward'), \
-                                  channel    =Categorical.from_dict(offer_dict.get('channel')), \
-                                  type       =Categorical.from_dict(offer_dict.get('type'))
+        offer = Offer(            offer_dict.get('timestamp'),                                    \
+                                  id         =offer_dict.get('id'),                               \
+                                  valid_from =offer_dict.get('valid_from'),                       \
+                                  valid_until=offer_dict.get('valid_until'),                      \
+                                  difficulty =offer_dict.get('difficulty'),                       \
+                                  reward     =offer_dict.get('reward'),                           \
+                                  channel    =Categorical.from_dict(offer_dict.get('channel')),   \
+                                  offer_type =Categorical.from_dict(offer_dict.get('offer_type'))
                                   )
         return offer
 
@@ -548,14 +551,10 @@ class TestOffer(unittest.TestCase):
     def setUp(self):
         timestamp = 12345
 
-        offer_channel = Categorical(('web', 'email', 'mobile'), (0, 1, 1))
+        offer_channel = Categorical(('web', 'email', 'mobile', 'social'), (0, 1, 1, 1))
         offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
 
-        self.offer = Offer(timestamp, channel=offer_channel, type=offer_type)
-
-    def test_init(self):
-        print self.offer.__dict__
-        self.assertTrue(self.offer)
+        self.offer = Offer(timestamp, channel=offer_channel, offer_type=offer_type)
 
 
     def test_serializaton(self):
@@ -582,6 +581,7 @@ class Transaction(Event):
         kwargs_name_set = set(kwargs.keys())
         assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: {}'.format(kwargs_name_set.difference(valid_kwargs))
 
+        self.type = 'transaction'
         self.id = kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
         self.timestamp = timestamp_received
         self.amount = kwargs.get('amount', None)
@@ -589,9 +589,10 @@ class Transaction(Event):
 
     def to_serializable(self):
         """Returna serializable dictionary representation of this Transaction."""
-        trx_dict = {'timestamp': self.timestamp,
-                      'id':        self.id,
-                      'amount':    self.amount
+        trx_dict = {'type':      self.type,
+                    'timestamp': self.timestamp,
+                    'id':        self.id,
+                    'amount':    self.amount
                     }
 
         return trx_dict
@@ -600,6 +601,8 @@ class Transaction(Event):
     @staticmethod
     def from_dict(trx_dict):
         """Create a Transaction Event from a dictionary."""
+        assert trx_dict.get('type') == 'transaction', 'ERROR - Dictionary must assert that it represents a Transaction, but type is {}.'.format(trx_dict.get('type'))
+
         trx = Transaction(        trx_dict.get('timestamp'),  \
                           id     =trx_dict.get('id'),         \
                           amount =trx_dict.get('amount'))

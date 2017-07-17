@@ -10,7 +10,7 @@ indiviudals to offers.
 import logging
 import unittest
 
-from externalities import World
+from externalities import World, Offer, Transaction, Event, Categorical
 from person import Person
 
 
@@ -37,7 +37,7 @@ class Population(object):
         self.population = dict([(p.id, p) for p in people])
         self.offers_path = offers_path
         self.events_path = events_path
-        self.offer_portfolio = set()
+        self.offer_portfolio = dict()
 
         logging.info('Population initialized')
 
@@ -61,6 +61,18 @@ class Population(object):
         Each json object represents a single offer.
         """
 
+        with open(portfolio_file_name, 'r') as portfolio_file:
+            for line in portfolio_file:
+                offer_json = line.strip()
+
+                # skip blank lines
+                if offer_json != '':
+                    offer = Offer.from_json(offer_json)
+                    offer_id = offer['id']
+                    if offer_id not in self.offer_portfolio:
+                        self.offer_portfolio[id] = offer
+                    else:
+                        raise ValueError('ERROR - Offer id {} is not unique. It is already present in the offer portfolio.'.format(offer_id))
 
 
 

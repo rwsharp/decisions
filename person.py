@@ -11,6 +11,7 @@ import logging
 import unittest
 
 import copy
+import json
 
 import uuid
 import numpy
@@ -85,12 +86,28 @@ class Person(object):
             offer_sensitivity: categorical
             make_purchase_sensitivity: ???
         """
+        valid_kwargs = {'id',
+                        'dob',
+                        'gender',
+                        'income',
+                        'taste',
+                        'marketing_segment',
+                        'last_transaction',
+                        'last_unviewed_offer',
+                        'last_viewed_offer',
+                        'history',
+                        'view_offer_sensitivity',
+                        'make_purchase_sensitivity',
+                        'purchase_amount_sensitivity'
+                        }
+        kwargs_name_set = set(kwargs.keys())
+        assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: {}'.format(kwargs_name_set.difference(valid_kwargs))
 
         ######################
         # Intrinsic Attributes
         ######################
 
-        self.id = uuid.uuid4()
+        self.id = kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
         self.dob = kwargs.get('dob', '19010101') # set a sneaky default value for unknown
         self.gender = kwargs.get('gender', None)
         self.became_member_on = became_member_on
@@ -110,7 +127,7 @@ class Person(object):
         if kwargs_marketing_segment is not None:
             assert default_marketing_segment.compare_names(kwargs_marketing_segment), 'ERROR - keyword argument marketing_segment must have names = {}'.format(default_marketing_segment.names)
             self.marketing_segment = kwargs_marketing_segment
-            self.marketing_segment.set_order(kwargs_marketing_segment)
+            self.marketing_segment.set_order(kwargs_marketing_segment.names)
         else:
             self.marketing_segment = default_marketing_segment
 
@@ -127,16 +144,19 @@ class Person(object):
         # sufficient purchase. If two offers are open simultanrously, then Person can get double credit (win both) with
         # a single purchase.
 
-        self.last_transaction = None
-        self.last_unviewed_offer = None
-        self.last_viewed_offer = None
+        self.last_transaction    = kwargs.get('last_transaction', None)
+        self.last_unviewed_offer = kwargs.get('last_unviewed_offer', None)
+        self.last_viewed_offer   = kwargs.get('last_viewed_offer', None)
 
         #########
         # History
         #########
 
         # A list of events. Since events have a timestamp, this is equivalent to a time series.
-        self.history = list()
+        kwargs_history = kwargs.get('history', list())
+        # note that all(list()) returns True
+        assert all(map(lambda e: isinstance(e, Event), kwargs_history)), 'ERROR - Not all items in history are of type Event.'
+        self.history = kwargs_history
 
         ###################
         # Sensitivity
@@ -149,7 +169,7 @@ class Person(object):
         kwargs_view_offer_sensitivity = kwargs.get('view_offer_sensitivity', None)
         if kwargs_view_offer_sensitivity is not None:
             assert default_view_offer_sensitivity.compare_names(kwargs_view_offer_sensitivity), 'ERROR - keyword argument view_offer_sensitivity must have names = {}'.format(default_view_offer_sensitivity.names)
-            self.view_offer_sensitivity = kwargs_view_offer_sensitivity
+            self.view_offer_sensitivity = copy.deepcopy(kwargs_view_offer_sensitivity)
             self.view_offer_sensitivity.set_order(default_view_offer_sensitivity.names)
         else:
             self.view_offer_sensitivity = default_view_offer_sensitivity
@@ -164,7 +184,7 @@ class Person(object):
         kwargs_make_purchase_sensitivity = kwargs.get('make_purchase_sensitivity', None)
         if kwargs_make_purchase_sensitivity is not None:
             assert default_make_purchase_sensitivity.compare_names(kwargs_make_purchase_sensitivity), 'ERROR - keyword argument make_purchase_sensitivity must have names = {}'.format(default_make_purchase_sensitivity.names)
-            self.make_purchase_sensitivity = kwargs_make_purchase_sensitivity
+            self.make_purchase_sensitivity = copy.deepcopy(kwargs_make_purchase_sensitivity)
             self.make_purchase_sensitivity.set_order(default_make_purchase_sensitivity.names)
         else:
             self.make_purchase_sensitivity = default_make_purchase_sensitivity
@@ -179,12 +199,81 @@ class Person(object):
         if kwargs_purchase_amount_sensitivity is not None:
             assert default_purchase_amount_sensitivity.compare_names(kwargs_purchase_amount_sensitivity), 'ERROR - keyword argument purchase_amount_sensitivity must have names = {}'.format(default_purchase_amount_sensitivity.names)
             default_purchase_amount_sensitivity.set('income_adjusted_purchase_sensitivity', 1)
-            self.purchase_amount_sensitivity = kwargs_purchase_amount_sensitivity
+            self.purchase_amount_sensitivity = copy.deepcopy(kwargs_purchase_amount_sensitivity)
             self.purchase_amount_sensitivity.set_order(default_purchase_amount_sensitivity.names)
         else:
             self.purchase_amount_sensitivity = default_purchase_amount_sensitivity
 
         logging.info('Person initialized')
+
+    def to_serializable(self):
+        """Create a serializable representation."""
+        person_dict = {'id':                          self.id,
+                       'became_member_on':            self.became_member_on,
+                       'dob':                         self.dob,
+                       'gender':                      self.gender,
+                       'income':                      self.income,
+                       'taste':                       self.taste.to_serializable(),
+                       'marketing_segment':           self.marketing_segment.to_serializable(),
+                       'last_transaction':            self.last_transaction,
+                       'last_unviewed_offer':         self.last_unviewed_offer,
+                       'last_viewed_offer':           self.last_viewed_offer,
+                       'history':                     [event.to_serializable() for event in self.history],
+                       'view_offer_sensitivity':      self.view_offer_sensitivity.to_serializable(),
+                       'make_purchase_sensitivity':   self.make_purchase_sensitivity.to_serializable(),
+                       'purchase_amount_sensitivity': self.purchase_amount_sensitivity.to_serializable()}
+
+        return person_dict
+
+
+    @staticmethod
+    def from_dict(person_dict):
+
+        history = list()
+        for event_dict in person_dict.get('history'):
+            event_type = event_dict.get('type')
+            if event_type == 'event':
+                event = Event.from_dict(event_dict)
+            elif event_type == 'offer':
+                event = Offer.from_dict(event_dict)
+            elif event_type == 'transaction':
+                event = Transaction.from_dict(event_dict)
+            else:
+                raise ValueError('ERROR - Event type not recognized ({}).'.format(event_type))
+
+            history.append(event)
+
+        person = Person(                            person_dict.get('became_member_on'),                                        \
+                                                 id=person_dict.get('id'),                                                      \
+                                                dob=person_dict.get('dob'),                                                     \
+                                             gender=person_dict.get('gender'),                                                  \
+                                             income=person_dict.get('income'),                                                  \
+                                              taste=Categorical.from_dict(person_dict.get('taste')),                            \
+                                  marketing_segment=Categorical.from_dict(person_dict.get('marketing_segment')),                \
+                                   last_transaction=person_dict.get('last_transaction'),                                        \
+                                last_unviewed_offer=person_dict.get('last_unviewed_offer'),                                     \
+                                  last_viewed_offer=person_dict.get('last_viewed_offer'),                                       \
+                                            history=history,                                                                    \
+                             view_offer_sensitivity=Categorical.from_dict(person_dict.get('view_offer_sensitivity')),           \
+                          make_purchase_sensitivity=Categorical.from_dict(person_dict.get('make_purchase_sensitivity')),        \
+                        purchase_amount_sensitivity=Categorical.from_dict(person_dict.get('purchase_amount_sensitivity')))
+
+        return person
+
+
+    @staticmethod
+    def from_json(json_string):
+        person_dict = json.loads(json_string)
+        person = Person.from_dict(person_dict)
+
+        return person
+
+
+    def to_json(self):
+        """Create a json representation."""
+        json_string = json.dumps(self.to_serializable())
+
+        return json_string
 
 
     def update_state(self, world):
@@ -479,8 +568,14 @@ class TestPerson(unittest.TestCase):
     """Test class for Person."""
 
     def setUp(self):
-        self.person = Person(became_member_on=12345)
+        self.offer = Offer(10, \
+                           channel=Categorical(('web', 'email', 'mobile', 'social'), (0, 1, 1, 1)), \
+                           offer_type=Categorical(('bogo', 'discount', 'informational'), (0, 0, 1)))
+        self.transaction = Transaction(20, amount=1.00)
         self.world = World()
+
+        self.person = Person(became_member_on=12345,
+                             history=[self.offer, self.transaction])
 
 
     def test_person(self):
@@ -495,6 +590,7 @@ class TestPerson(unittest.TestCase):
     def test_simulate(self):
         self.person.simulate(self.world)
         self.assertTrue(1)
+
 
     def test_bounded_response(self):
         min_x = 2
@@ -519,13 +615,11 @@ class TestPerson(unittest.TestCase):
 
 
     def test_view_offer(self):
-        person_view_offer_sensitivity = Categorical(['background', 'offer_age', 'web', 'email', 'mobile', 'social'],
-                                                    [0, -1, 1, 1, 1, 1])
+        person_view_offer_sensitivity = Categorical(['background', 'offer_age', 'web', 'email', 'mobile', 'social'], [0, -1, 1, 1, 1, 1])
         offer_channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 1))
         offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 1, 0))
 
-        discount = Offer(0, valid_from=10, valid_until=20, difficulty=10, reward=2, channel=offer_channel,
-                         type=offer_type)
+        discount = Offer(0, valid_from=10, valid_until=20, difficulty=10, reward=2, channel=offer_channel, offer_type=offer_type)
         person = Person(became_member_on='20170716', view_offer_sensitivity=person_view_offer_sensitivity)
         person.last_unviewed_offer = discount
 
@@ -535,3 +629,15 @@ class TestPerson(unittest.TestCase):
         person.view_offer(world)
 
         self.assertTrue(True)
+
+
+    def test_serializaton(self):
+        person_dict = self.person.to_serializable()
+        person_reconstituted = Person.from_dict(person_dict)
+        person_reconstituted_dict = person_reconstituted.to_serializable()
+        self.assertTrue(person_reconstituted_dict == person_dict)
+
+        person_json = self.person.to_json()
+        person_reconstituted = Person.from_json(person_json)
+        person_reconstituted_dict = person_reconstituted.to_serializable()
+        self.assertTrue(person_reconstituted_dict == person_dict)
