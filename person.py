@@ -24,8 +24,8 @@ class Person(object):
     taste_names = ('sweet', 'sour', 'salty', 'bitter', 'umami')
     marketing_segment_names = ('front page', 'local', 'entertainment', 'sports', 'opinion', 'comics')
 
-    # outlier_frequency = n * 0.0001 means that n in every 10,000 purchases is a big one
-    outlier_frequency = 0.0005
+    # outlier_frequency = n * 0.001 means that n in every 1,000 purchases is a big one
+    outlier_frequency = 0.005
 
 
     @staticmethod
@@ -241,6 +241,9 @@ class Person(object):
 
 
     def view_offer(self, world):
+
+        logging.debug('View offer decision at time t = {}'.format(world.world_time))
+
         offer = self.last_unviewed_offer
         if offer is not None:
             offer_age = world.world_time - offer.timestamp
@@ -252,15 +255,19 @@ class Person(object):
         x    = numpy.concatenate((numpy.array((1,
                                                offer_age)),
                                   offer.channel.weights))
-        p = 1.0 / (1.0 + numpy.exp(-numpy.sum(beta * x)))
+        p = 1.0 / (1.0 + numpy.exp(-numpy.dot(beta, x)))
 
-        logging.debug('\n'.join(map(str, ('view offer probability', beta, x, numpy.sum(beta*x), p))))
-
+        logging.debug('        beta = {}'.format(beta))
+        logging.debug('           x = {}'.format(x))
+        logging.debug('      beta*x = {}'.format(beta*x))
+        logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
+        logging.debug('           p = {}'.format(p))
 
         # flip a coin to decide if the offer was viewed
         viewed_offer = True if numpy.random.random() < p else False
 
         if viewed_offer:
+            logging.debug('Offer viewed')
             offer_viewed = self.last_unviewed_offer
             self.last_viewed_offer = offer_viewed
             # by setting the last unviewed offer to None here, we're assuming that only the most recently
@@ -278,6 +285,8 @@ class Person(object):
 
         Depends on time of day, segment, income, how long since last purchase, offers
         """
+
+        logging.debug('Made purchase decision at time t = {}'.format(world.world_time))
 
         # How long since last transaction
         if self.last_transaction is not None:
@@ -316,24 +325,24 @@ class Person(object):
                             time_since_last_transaction,
                             last_viewed_offer_strength,
                             viewed_active_offer))
-        p = 1.0 / (1.0 + numpy.exp(-numpy.sum(beta * x)))
+        p = 1.0 / (1.0 + numpy.exp(-numpy.dot(beta, x)))
 
-        print '----'
-        print beta
-        print x
-        print beta*x
-        print numpy.sum(beta*x)
-        print p
+        logging.debug('        beta = {}'.format(beta))
+        logging.debug('           x = {}'.format(x))
+        logging.debug('      beta*x = {}'.format(beta*x))
+        logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
+        logging.debug('           p = {}'.format(p))
 
         # flip a coin to decide if a purchase was made
         made_purchase = True if numpy.random.random() < p else False
 
         if made_purchase:
+            logging.debug('Made purchase')
             # Determine if this is an outlier order or regular order
             if numpy.random.random() < self.outlier_frequency:
-                purchase_amount = self.outlier_purchase_amount(world.world_time)
+                purchase_amount = self.outlier_purchase_amount(world)
             else:
-                purchase_amount = self.purchase_amount(world.world_time)
+                purchase_amount = self.purchase_amount(world)
 
             transaction = Transaction(world.world_time, amount=purchase_amount)
             self.last_transaction = transaction
@@ -355,6 +364,8 @@ class Person(object):
         3: taste components
         """
 
+        logging.debug('Purchase amount decision at time t = {}'.format(world.world_time))
+
         # average purchase increases with income, but has a minimum (min price of a product) and tops out at some level:
         # linear with min and max plateaus at thresholds
         min_income = 10000.0
@@ -370,7 +381,14 @@ class Person(object):
                                self.marketing_segment.weights,
                                self.taste.weights))
 
-        mean = numpy.sum(beta * x)
+        # Cannot allow a non-positive mean purchase, so set the lower limit
+        mean = max(min_mean_purchase, numpy.dot(beta, x))
+
+        logging.debug('        beta = {}'.format(beta))
+        logging.debug('           x = {}'.format(x))
+        logging.debug('      beta*x = {}'.format(beta*x))
+        logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
+        logging.debug('        mean = {}'.format(mean))
 
         # simple relationship between mean and var reflects the increased options for purchase to achieve higher mean
         var = 2.0 * mean
@@ -383,15 +401,64 @@ class Person(object):
 
         # minimum purchase is $0.05
         # all purchases are rounded to a whole number of cents
-        z = max(0.05, round(numpy.random.gamma(shape=k, scale=theta, size=None), 2))
+        amount = max(0.05, round(numpy.random.gamma(shape=k, scale=theta, size=None), 2))
 
-        # todo: add outliers from a different distribution
+        logging.debug('Purcahse amount = {}'.format(amount))
+
+        return amount
+
 
     def outlier_purchase_amount(self, world):
-        """Randomly sample an outlier distribution to determine the amount of a purchase."""
-        print 'WARNING - Under Construction'
+        """Randomly sample an outlier distribution to determine the amount of a purchase.
 
-        return 0
+        The model here is purchasing for a group of mean size 30 (poisson)
+        """
+
+        mean_group_size = 30
+        group_size = numpy.random.poisson(mean_group_size)
+
+        logging.debug('Purchase amount decision at time t = {}'.format(world.world_time))
+
+        # average purchase increases with income, but has a minimum (min price of a product) and tops out at some level:
+        # linear with min and max plateaus at thresholds
+        min_income = 10000.0
+        max_income = 100000.0
+        min_mean_purchase = 1.0
+        max_mean_purchase = 25.0
+
+        income_adjusted_purchase_sensitivity = self.bounded_response(self.income, min_income, max_income, min_mean_purchase, max_mean_purchase)
+
+        beta = self.purchase_amount_sensitivity.weights
+        x = numpy.concatenate((numpy.array((1,
+                                            income_adjusted_purchase_sensitivity)),
+                               self.marketing_segment.weights,
+                               self.taste.weights))
+
+        # Cannot allow a non-positive mean purchase, so set the lower limit
+        mean = max(min_mean_purchase, numpy.dot(beta, x))
+
+        logging.debug('        beta = {}'.format(beta))
+        logging.debug('           x = {}'.format(x))
+        logging.debug('      beta*x = {}'.format(beta*x))
+        logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
+        logging.debug('        mean = {}'.format(mean))
+
+        # simple relationship between mean and var reflects the increased options for purchase to achieve higher mean
+        var = 2.0 * mean
+
+        # mean = k*theta
+        # var = k*theta**2
+
+        theta = var / mean
+        k = mean ** 2 / var
+
+        # minimum purchase is $0.05
+        # all purchases are rounded to a whole number of cents
+        amount = max(0.05, round(numpy.sum(numpy.random.gamma(shape=k, scale=theta, size=group_size)), 2))
+
+        logging.debug('Purcahse amount = {}'.format(amount))
+
+        return amount
 
 
 class TestPerson(unittest.TestCase):
