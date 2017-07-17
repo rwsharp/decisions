@@ -8,11 +8,11 @@ Classes: Constants, World,
 import logging
 import unittest
 
+import uuid
+import json
+
 import numpy
 
-##################
-# GLOBAL CONSTANTS
-##################
 
 class Constants(object):
     """Universal constants"""
@@ -37,9 +37,7 @@ class World(object):
     def __init__(self,
                  world_time=Constants.BEGINNING_OF_TIME,
                  real_time_tick=1.0,
-                 world_time_tick=1,
-                 offers_path='/offers',
-                 events_path='/events'):
+                 world_time_tick=1):
         """Initialize World.
 
         Args:
@@ -52,8 +50,6 @@ class World(object):
         self.world_time = world_time
         self.real_time_tick = real_time_tick
         self.world_time_tick = world_time_tick
-        self.offers_path = offers_path
-        self.events_path = events_path
 
         logging.info('World initialized')
 
@@ -63,20 +59,17 @@ class World(object):
         raise NotImplementedError()
 
 
-    def read_offers(self):
-        """Read offer data if present in offers_path."""
-        raise NotImplementedError()
-
-
     def clean_offers(self):
         """Clean the offers_path after reading."""
         raise NotImplementedError()
 
 
-    def simulate(self):
+    def update(self):
         """Simulate the world external to the individuals of a population during the tick.
 
         At a minimum this increases simulation time by one tick."""
+
+        WAIT
 
         self.world_time += self.world_time_tick
 
@@ -96,7 +89,7 @@ class TestWorld(unittest.TestCase):
 
     def setUp(self):
         self.World = World()
-        
+
 
 class Categorical(object):
     """A categorical variable class.
@@ -184,6 +177,7 @@ class Categorical(object):
         self.zeros = other.zeros.copy()
         self.ones = other.ones.copy()
 
+
     def compare_equality(self, other):
         """Check if two Categoricals have the same names and weights in any order."""
         if set(self.names) == set(other.names):
@@ -214,7 +208,6 @@ class Categorical(object):
         return self_same_names_as_other
 
 
-
     def set_order(self, names):
         """Reorder the names and weights of a categorical to match the given order in the names argument."""
         assert set(self.names) == set(names), 'ERROR - The given set of names {} does not match the set of existing names {}'.format(names, self.names)
@@ -222,6 +215,37 @@ class Categorical(object):
 
         self.weights = numpy.array([self.get(name) for name in names])
         self.names = numpy.array(names)
+
+
+    def to_serializable(self):
+        categorical_dict = {'names':   list(self.names),
+                            'weights': list(self.weights)}
+
+        return categorical_dict
+
+    @staticmethod
+    def from_dict(categorical_dict):
+        cat = Categorical(names  =categorical_dict.get('names'), \
+                          weights=categorical_dict.get('weights'))
+
+        return cat
+
+
+    def to_json(self):
+        """Create a json representation of the Categorical."""
+        json_string = json.dumps(self.to_serializable())
+
+        return json_string
+
+
+    @staticmethod
+    def from_json(json_string):
+        """Turn json into a Categorical."""
+        categorical_dict = json.loads(json_string)
+        cat = Categorical.from_dict(categorical_dict)
+
+        return cat
+
 
 
 class TestCategorical(unittest.TestCase):
@@ -297,6 +321,19 @@ class TestCategorical(unittest.TestCase):
         self.assertTrue(numpy.sum(r.weights) == 10)
 
 
+    def test_serializaton(self):
+        cat_dict = self.cat_0.to_serializable()
+        cat_reconstituted = Categorical.from_dict(cat_dict)
+        cat_reconstituted_dict = cat_reconstituted.to_serializable()
+        self.assertTrue(cat_reconstituted_dict == cat_dict)
+
+        cat_json = self.cat_0.to_json()
+        cat_reconstituted = Categorical.from_json(cat_json)
+        cat_reconstituted_dict = cat_reconstituted.to_serializable()
+        self.assertTrue(cat_reconstituted_dict == cat_dict)
+
+
+
 class Event(object):
     """Events are the actions and interactions that occur with respect to a Person.
 
@@ -313,16 +350,62 @@ class Event(object):
                    'type_bogo': 1 / 0, 'type_discount': 1 / 0, ...}}
     """
 
-    timestamp = None
-    value = None
-
-    def __init__(self, timestamp):
+    def __init__(self, timestamp, **kwargs):
         """Initialize Person.
 
         Args:
         """
 
+        valid_kwargs = set(('id', 'value'))
+        kwargs_name_set = set(kwargs.keys())
+        assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: {}'.format(kwargs_name_set.difference(valid_kwargs))
+
+        self.id = kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
         self.timestamp = timestamp
+        self.value = kwargs.get('value', None)
+
+
+    #################################################################################
+    # Event Specific Methods - Each Event subclass should implement its own versions.
+    #################################################################################
+
+    def to_serializable(self):
+        """Create a serializable representation."""
+        event_dict = {'id':        self.id,
+                      'timestamp': self.timestamp,
+                      'value':     self.value}
+
+        return event_dict
+
+
+    @staticmethod
+    def from_dict(event_dict):
+        event = Event(      event_dict.get('timestamp'), \
+                            id   =event_dict.get('id'), \
+                            value=event_dict.get('value'))
+
+        return event
+
+
+    @staticmethod
+    def from_json(json_string):
+        event_dict = json.loads(json_string)
+        event = Event.from_dict(event_dict)
+
+        return event
+
+
+    #######################################################
+    # Generic Event Methods - Used by all Event subclasses.
+    #######################################################
+
+    def to_json(self):
+        """Create a json representation."""
+        json_string = json.dumps(self.to_serializable())
+
+        return json_string
+
+
 
 
 class TestEvent(unittest.TestCase):
@@ -330,12 +413,25 @@ class TestEvent(unittest.TestCase):
 
     def setUp(self):
         timestamp = 12345
-        self.event = Event(timestamp)
+        value = 0.00
+        self.event = Event(timestamp, value=value)
 
 
     def test_init(self):
         print self.event.__dict__
         self.assertTrue(self.event)
+
+
+    def test_serializaton(self):
+        event_dict = self.event.to_serializable()
+        event_reconstituted = Event.from_dict(event_dict)
+        event_reconstituted_dict = event_reconstituted.to_serializable()
+        self.assertTrue(event_reconstituted_dict == event_dict)
+
+        event_json = self.event.to_json()
+        event_reconstituted = Event.from_json(event_json)
+        event_reconstituted_dict = event_reconstituted.to_serializable()
+        self.assertTrue(event_reconstituted_dict == event_dict)
 
 
 class Offer(Event):
@@ -364,15 +460,15 @@ class Offer(Event):
          'type_discount': 1 / 0, ...}
     """
 
-    valid_from = None
-    valid_until = None
-    difficulty = None
-    reward = None
-
     channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 1))
     type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
 
     def __init__(self, timestamp_received, **kwargs):
+        valid_kwargs = set(('id', 'valid_from', 'valid_until', 'difficulty', 'reward', 'channel', 'type'))
+        kwargs_name_set = set(kwargs.keys())
+        assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: {}'.format(kwargs_name_set.difference(valid_kwargs))
+
+        self.id = kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
         self.timestamp = timestamp_received
         self.valid_from = kwargs.get('valid_from', Constants.BEGINNING_OF_TIME)
         self.valid_until = kwargs.get('valid_until', Constants.END_OF_TIME)
@@ -389,6 +485,43 @@ class Offer(Event):
 
         assert numpy.sum(self.channel.weights) > 0, 'ERROR - offer must have at least one channel'
         assert numpy.sum(self.type.weights) == 1,   'ERROR - offer must have exactly one type'
+
+
+    def to_serializable(self):
+        offer_dict = {'timestamp':   self.timestamp,
+                      'id':          self.id,
+                      'valid_from':  self.valid_from,
+                      'valid_until': self.valid_until,
+                      'difficulty':  self.difficulty,
+                      'reward':      self.reward,
+                      'channel':     self.channel.to_serializable(),
+                      'type':        self.type.to_serializable()
+                      }
+
+        return offer_dict
+
+    @staticmethod
+    def from_dict(offer_dict):
+        stop = 1
+
+        offer = Offer(            offer_dict.get('timestamp'), \
+                                  id         =offer_dict.get('id'), \
+                                  valid_from =offer_dict.get('valid_from'), \
+                                  valid_until=offer_dict.get('valid_until'), \
+                                  difficulty =offer_dict.get('difficulty'), \
+                                  reward     =offer_dict.get('reward'), \
+                                  channel    =Categorical.from_dict(offer_dict.get('channel')), \
+                                  type       =Categorical.from_dict(offer_dict.get('type'))
+                                  )
+        return offer
+
+
+    @staticmethod
+    def from_json(json_string):
+        offer_dict = json.loads(json_string)
+        offer = Offer.from_dict(offer_dict)
+
+        return offer
 
 
     @staticmethod
@@ -425,6 +558,18 @@ class TestOffer(unittest.TestCase):
         self.assertTrue(self.offer)
 
 
+    def test_serializaton(self):
+        offer_dict = self.offer.to_serializable()
+        offer_reconstituted = Offer.from_dict(offer_dict)
+        offer_reconstituted_dict = offer_reconstituted.to_serializable()
+        self.assertTrue(offer_reconstituted_dict == offer_dict)
+
+        offer_json = self.offer.to_json()
+        offer_reconstituted = Offer.from_json(offer_json)
+        offer_reconstituted_dict = offer_reconstituted.to_serializable()
+        self.assertTrue(offer_reconstituted_dict == offer_dict)
+
+
 class Transaction(Event):
     """Offer events occur when a Person receives an offer and offer an incentive to make a purchase.
 
@@ -433,8 +578,40 @@ class Transaction(Event):
     """
 
     def __init__(self, timestamp_received, **kwargs):
+        valid_kwargs = set(('id', 'amount'))
+        kwargs_name_set = set(kwargs.keys())
+        assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: {}'.format(kwargs_name_set.difference(valid_kwargs))
+
+        self.id = kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
         self.timestamp = timestamp_received
         self.amount = kwargs.get('amount', None)
+
+
+    def to_serializable(self):
+        """Returna serializable dictionary representation of this Transaction."""
+        trx_dict = {'timestamp': self.timestamp,
+                      'id':        self.id,
+                      'amount':    self.amount
+                    }
+
+        return trx_dict
+
+
+    @staticmethod
+    def from_dict(trx_dict):
+        """Create a Transaction Event from a dictionary."""
+        trx = Transaction(        trx_dict.get('timestamp'),  \
+                          id     =trx_dict.get('id'),         \
+                          amount =trx_dict.get('amount'))
+        return trx
+
+
+    @staticmethod
+    def from_json(json_string):
+        trx_dict = json.loads(json_string)
+        trx = Transaction.from_dict(trx_dict)
+
+        return trx
 
 
 class TestTransaction(unittest.TestCase):
@@ -445,4 +622,17 @@ class TestTransaction(unittest.TestCase):
         amount = 1.0
 
         self.transaction = Transaction(timestamp, amount=amount)
+
+
+    def test_serializaton(self):
+        trx_dict = self.transaction.to_serializable()
+        trx_reconstituted = Transaction.from_dict(trx_dict)
+        trx_reconstituted_dict = trx_reconstituted.to_serializable()
+        self.assertTrue(trx_reconstituted_dict == trx_dict)
+
+        trx_json = self.transaction.to_json()
+        trx_reconstituted = Transaction.from_json(trx_json)
+        trx_reconstituted_dict = trx_reconstituted.to_serializable()
+        self.assertTrue(trx_reconstituted_dict == trx_dict)
+
 

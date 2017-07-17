@@ -240,6 +240,20 @@ class Person(object):
             logging.debug('Made purchase at {}: {}'.format(world.world_time, self.last_transaction.__dict__))
 
 
+    def receive_offer(self, world, offer):
+        """Receive an offer from an external source."""
+
+        # set the receipt time
+        received_time = world.world_time
+        offer.timestamp = received_time
+
+        # update history
+        self.history.append(offer)
+        self.last_unviewed_offer = offer
+
+        logging.debug('{} received offer {} at {}'.format(self.id, offer.id, received_time))
+
+
     def view_offer(self, world):
 
         logging.debug('View offer decision at time t = {}'.format(world.world_time))
