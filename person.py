@@ -10,6 +10,8 @@ represesnted.
 import logging
 import unittest
 
+import copy
+
 import uuid
 import numpy
 
@@ -20,11 +22,54 @@ class Person(object):
     """Represent an individual and simulate the person's actions."""
 
     taste_names = ('sweet', 'sour', 'salty', 'bitter', 'umami')
-    channel_names = Offer.channel.names
     marketing_segment_names = ('front page', 'local', 'entertainment', 'sports', 'opinion', 'comics')
 
     # outlier_frequency = n * 0.0001 means that n in every 10,000 purchases is a big one
     outlier_frequency = 0.0005
+
+
+    @staticmethod
+    def bounded_response(x, min_x, max_x, f_of_min_x, f_of_max_x):
+        """Bounded piecewise linear response to a stimulus.
+
+        Let x represent the independent variable and y the dependent variable. Given bounds on x and y, this function
+        defines a response, f(x) that equals f_of_min_x when x <= min_x, f_of_max_x when x >= max_x, and the linear
+        interpolant in the region between min_x and max_x.
+        """
+
+        slope = (f_of_max_x - f_of_min_x)/float(max_x - min_x)
+
+        if x <= min_x:
+            return_value = f_of_min_x
+        elif x <= max_x:
+            return_value = f_of_min_x + slope*(x - min_x)
+        else:
+            return_value = f_of_max_x
+
+        return return_value
+
+
+    @staticmethod
+    def print_help():
+        person = Person('20170716')
+
+        print 'id: uuid.uuid4() (set automatically)'
+        print 'dob: \'YYYYMMDD\''
+        print 'gender: [\'M\', \'F\', \'O\']'
+        print 'became_member_on: \'YYYYMMDD\''
+        print 'income: positive numeric'
+        print 'taste: Categorical([{}])'.format(','.join(map(lambda s: "'" + s + "'", person.taste.names)))
+        print 'marketing_segment: Categorical([{}])'.format(','.join(map(lambda s: "'" + s + "'", person.marketing_segment.names)))
+        print
+        print 'last_transaction: Transaction'
+        print 'last_unviewed_offer: Offer'
+        print 'last_viewed_offer: Offer'
+        print 'history: list of Offers and Transactions sorted by Event timestamps'
+        print
+        print 'view_offer_sensitivity: Categorical([{}])'.format(','.join(map(lambda s: "'" + s + "'", person.view_offer_sensitivity.names)))
+        print 'make_purchase_sensitivity: Categorical([{}])'.format(','.join(map(lambda s: "'" + s + "'", person.make_purchase_sensitivity.names)))
+        print 'purchase_amount_sensitivity: Categorical([{}])'.format(','.join(map(lambda s: "'" + s + "'", person.purchase_amount_sensitivity.names)))
+
 
     def __init__(self, became_member_on, **kwargs):
         """Initialize Person.
@@ -36,7 +81,6 @@ class Person(object):
             gender: M, F, O (O = other, e.g., decline to state, does not identify, etc.)
             income: positive int, None
             taste: categorical('sweet', 'sour', 'salty', 'bitter', 'umami')
-            channel: categorical('email', 'app', 'web')
             marketing_segment: categorical('front page', 'local', 'entertainment', 'sports', 'opinion', 'comics')
             offer_sensitivity: categorical
             make_purchase_sensitivity: ???
@@ -55,25 +99,16 @@ class Person(object):
         default_taste = Categorical(self.taste_names)
         kwargs_taste = kwargs.get('taste', None)
         if kwargs_taste is not None:
-            assert default_taste.same_names(kwargs_taste), 'ERROR - keyword argument taste must have names = {}'.format(default_taste.names)
+            assert default_taste.compare_names(kwargs_taste), 'ERROR - keyword argument taste must have names = {}'.format(default_taste.names)
             self.taste = kwargs_taste
             self.taste.set_order(default_taste.names)
         else:
             self.taste = default_taste
 
-        default_channel = Categorical(self.channel_names)
-        kwargs_channel = kwargs.get('channel', None)
-        if kwargs_taste is not None:
-            assert default_channel.same_names(kwargs_channel), 'ERROR - keyword argument channel must have names = {}'.format(default_channel.names)
-            self.channel = kwargs_channel
-            self.channel.set_order(default_channel)
-        else:
-            self.channel = default_channel
-
         default_marketing_segment = Categorical(self.marketing_segment_names)
         kwargs_marketing_segment = kwargs.get('marketing_segment')
         if kwargs_marketing_segment is not None:
-            assert default_marketing_segment.same_names(kwargs_marketing_segment), 'ERROR - keyword argument marketing_segment must have names = {}'.format(default_marketing_segment.names)
+            assert default_marketing_segment.compare_names(kwargs_marketing_segment), 'ERROR - keyword argument marketing_segment must have names = {}'.format(default_marketing_segment.names)
             self.marketing_segment = kwargs_marketing_segment
             self.marketing_segment.set_order(kwargs_marketing_segment)
         else:
@@ -83,12 +118,18 @@ class Person(object):
         # Extrinsic Attributes
         ######################
 
+        # only allow one offer to be active at a time, and only count as active if it's been viewed (no accidental
+        # winners) - if offers have overlapping validity periods, then last received is the winner
+
+        # Person has a short memory. Only the most recently received offer can be viewed (a newly received offer will
+        # supplant it), and only the most recently viewed offer can influence Person's behavior (view another and Person
+        # forgets). However, whether an offer is viewed or not, the user can still accidentally win by making a
+        # sufficient purchase. If two offers are open simultanrously, then Person can get double credit (win both) with
+        # a single purchase.
+
         self.last_transaction = None
         self.last_unviewed_offer = None
         self.last_viewed_offer = None
-        # only allow one offer to be active at a time, and only count as active if it's been viewed (no accidental
-        # winners) - if offers have overlapping validity periods, then last received is the winner
-        self.last_viewed_offer_active = None
 
         #########
         # History
@@ -102,41 +143,41 @@ class Person(object):
         ###################
 
         # view_offer_sensitivity
-        view_offer_sensitivity_names = numpy.concatenate((numpy.array(('offer_age',)), self.channel_names))
+        view_offer_sensitivity_names = numpy.concatenate((numpy.array(('background', 'offer_age')), Offer.channel.names))
         default_view_offer_sensitivity = Categorical(view_offer_sensitivity_names)
         default_view_offer_sensitivity.set('offer_age', -1)
         kwargs_view_offer_sensitivity = kwargs.get('view_offer_sensitivity', None)
         if kwargs_view_offer_sensitivity is not None:
-            assert default_view_offer_sensitivity.same_names(kwargs_view_offer_sensitivity), 'ERROR - keyword argument view_offer_sensitivity must have names = {}'.format(default_view_offer_sensitivity.names)
+            assert default_view_offer_sensitivity.compare_names(kwargs_view_offer_sensitivity), 'ERROR - keyword argument view_offer_sensitivity must have names = {}'.format(default_view_offer_sensitivity.names)
             self.view_offer_sensitivity = kwargs_view_offer_sensitivity
             self.view_offer_sensitivity.set_order(default_view_offer_sensitivity.names)
         else:
             self.view_offer_sensitivity = default_view_offer_sensitivity
 
         # make_purchase_sensitivity
-        make_purchase_sensitivity_names = numpy.concatenate((numpy.array(('time_since_last_transaction',
-                                                                          'time_since_last_viewed_offer',
-                                                                          'viewed_active_offer')),
-                                                             self.channel_names))
+        make_purchase_sensitivity_names = numpy.array(('background',
+                                                       'time_since_last_transaction',
+                                                       'last_viewed_offer_strength',
+                                                       'viewed_active_offer'))
         default_make_purchase_sensitivity = Categorical(make_purchase_sensitivity_names)
         default_make_purchase_sensitivity.set('time_since_last_viewed_offer', -1)
         kwargs_make_purchase_sensitivity = kwargs.get('make_purchase_sensitivity', None)
         if kwargs_make_purchase_sensitivity is not None:
-            assert default_make_purchase_sensitivity.same_names(kwargs_make_purchase_sensitivity), 'ERROR - keyword argument make_purchase_sensitivity must have names = {}'.format(default_make_purchase_sensitivity.names)
+            assert default_make_purchase_sensitivity.compare_names(kwargs_make_purchase_sensitivity), 'ERROR - keyword argument make_purchase_sensitivity must have names = {}'.format(default_make_purchase_sensitivity.names)
             self.make_purchase_sensitivity = kwargs_make_purchase_sensitivity
             self.make_purchase_sensitivity.set_order(default_make_purchase_sensitivity.names)
         else:
             self.make_purchase_sensitivity = default_make_purchase_sensitivity
 
         # purchase_amount_sensitivity
-        purchase_amount_sensitivity_names = numpy.concatenate((numpy.array(('constant',
+        purchase_amount_sensitivity_names = numpy.concatenate((numpy.array(('background',
                                                                             'income_adjusted_purchase_sensitivity')),
                                                                self.marketing_segment_names,
                                                                self.taste_names))
         default_purchase_amount_sensitivity = Categorical(purchase_amount_sensitivity_names)
         kwargs_purchase_amount_sensitivity = kwargs.get('purchase_amount_sensitivity', None)
         if kwargs_purchase_amount_sensitivity is not None:
-            assert default_purchase_amount_sensitivity.same_names(kwargs_purchase_amount_sensitivity), 'ERROR - keyword argument purchase_amount_sensitivity must have names = {}'.format(default_purchase_amount_sensitivity.names)
+            assert default_purchase_amount_sensitivity.compare_names(kwargs_purchase_amount_sensitivity), 'ERROR - keyword argument purchase_amount_sensitivity must have names = {}'.format(default_purchase_amount_sensitivity.names)
             default_purchase_amount_sensitivity.set('income_adjusted_purchase_sensitivity', 1)
             self.purchase_amount_sensitivity = kwargs_purchase_amount_sensitivity
             self.purchase_amount_sensitivity.set_order(default_purchase_amount_sensitivity.names)
@@ -146,27 +187,17 @@ class Person(object):
         logging.info('Person initialized')
 
 
-    def update_state(self, current_time):
+    def update_state(self, world):
         """Update customer state variables.
 
         The customer is only influenced by the last viewed offer (older offers are forgotten). If the last viewed offer
         is currently active, update the active viewed offer.
         """
 
-        # If the active viewed offer is no longer valid, reset it.
-        offer = self.active_viewed_offer
-        if offer is not None:
-            if current_time > offer.valid_until:
-                self.active_viewed_offer = None
-
-        # Check if the last viewed offer has become active
-        offer = self.last_viewed_offer
-        if offer is not None:
-            if offer.valid_from <= current_time <= offer.valid_until:
-                self.active_viewed_offer = offer
+        return
 
 
-    def simulate(self, current_time):
+    def simulate(self, world):
         """Simulate the actions of an individual.
 
         There actions a person can take are:
@@ -200,33 +231,38 @@ class Person(object):
         the probability decreases with time
         """
 
-        viewed_offer_event = self.view_offer(current_time)
+        viewed_offer_event = self.view_offer(world)
         if viewed_offer_event:
-            logging.DEBUG('Viewed offer at {}: {}'.format(current_time, self.last_viewed_offer.__dict__))
+            logging.debug('Viewed offer at {}: {}'.format(world.world_time, self.last_viewed_offer.__dict__))
 
-        purchase_event = self.make_purchase(current_time)
+        purchase_event = self.make_purchase(world)
         if purchase_event:
-            logging.DEBUG('Made purchase at {}: {}'.format(current_time, self.last_transaction.__dict__))
+            logging.debug('Made purchase at {}: {}'.format(world.world_time, self.last_transaction.__dict__))
 
 
-    def view_offer(self, current_time):
+    def view_offer(self, world):
         offer = self.last_unviewed_offer
         if offer is not None:
-            offer_age = current_time - offer.timestamp
+            offer_age = world.world_time - offer.timestamp
         else:
             # there is no offer to view, we're done here
             return None
 
-        beta = self.offer_sensitivity
-        x    = numpy.concatenate(numpy.array((offer_age,)), offer.channel.weights)
+        beta = self.view_offer_sensitivity.weights
+        x    = numpy.concatenate((numpy.array((1,
+                                               offer_age)),
+                                  offer.channel.weights))
         p = 1.0 / (1.0 + numpy.exp(-numpy.sum(beta * x)))
+
+        logging.debug('\n'.join(map(str, ('view offer probability', beta, x, numpy.sum(beta*x), p))))
+
 
         # flip a coin to decide if the offer was viewed
         viewed_offer = True if numpy.random.random() < p else False
 
         if viewed_offer:
             offer_viewed = self.last_unviewed_offer
-            self.last_viewed_offers = offer_viewed
+            self.last_viewed_offer = offer_viewed
             # by setting the last unviewed offer to None here, we're assuming that only the most recently
             # received offer will every be viewed. Once it's not at the top of the inbox, it's forgotten.
             self.last_unviewed_offer = None
@@ -236,7 +272,7 @@ class Person(object):
         return offer_viewed
 
 
-    def make_purchase(self, current_time):
+    def make_purchase(self, world):
         """Person decides whether to make a purcahse or not and the size of the purchase. Includes outliers, e.g., due
         to large group orders vs. individual orders.
 
@@ -245,27 +281,49 @@ class Person(object):
 
         # How long since last transaction
         if self.last_transaction is not None:
-            time_since_last_transaction = current_time - self.last_transaction.timestamp
+            time_since_last_transaction = world.world_time - self.last_transaction.timestamp
         else:
             time_since_last_transaction = 0
 
         # How long since last viewed offer
         offer = self.last_viewed_offer
         if offer is not None:
-            time_since_last_viewed_offer = current_time - offer.timestamp
+            time_since_last_viewed_offer = world.world_time - offer.timestamp
+            last_viewed_offer_duration = offer.valid_until - offer.timestamp
+            viewed_active_offer = 1 if offer.is_active(world.world_time) else 0
+            offer_channel_weights = offer.channel.weights
         else:
             # never viewed an offer, so as if it's been forever
             time_since_last_viewed_offer = Constants.END_OF_TIME - Constants.BEGINNING_OF_TIME
+            last_viewed_offer_duration = 0
+            viewed_active_offer = 0
+            offer_channel_weights = Offer.channel.zeros
 
-        # Is last viewed offer active?
-        viewed_active_offer = 1 if self.last_viewed_offer.is_active(current_time) else 0
+        # as time since last offer increases, the effect should go to zero: x_max = T, f_of_x_max = 0
+        # the offer view is most powerful immediately: x_min = 0, f_of_x_min = 1
+        # therefore we have a function that should decrease from 1 to 0 as x increases from 0 to T
+        # also, the sensitivity should be positive (the negative effect lies in the state variable)
+        # T is the time at which the viewed offer no longer has an effect
+        # let's make this 3 days after the offer expires = offer_length + 24/float(world.world_time_tick) * 3
+        last_viewed_offer_strength = self.bounded_response(time_since_last_viewed_offer,
+                                                           min_x=0,
+                                                           max_x=last_viewed_offer_duration + 24/float(world.world_time_tick)*3,
+                                                           f_of_min_x=1.0,
+                                                           f_of_max_x=0.0)
 
-        beta = self.make_purchase_sensitivity
-        x    = numpy.concatenate((numpy.array((time_since_last_transaction,
-                                               time_since_last_viewed_offer,
-                                               viewed_active_offer)),
-                                  offer.channel.weights))
+        beta = self.make_purchase_sensitivity.weights
+        x    = numpy.array((1,
+                            time_since_last_transaction,
+                            last_viewed_offer_strength,
+                            viewed_active_offer))
         p = 1.0 / (1.0 + numpy.exp(-numpy.sum(beta * x)))
+
+        print '----'
+        print beta
+        print x
+        print beta*x
+        print numpy.sum(beta*x)
+        print p
 
         # flip a coin to decide if a purchase was made
         made_purchase = True if numpy.random.random() < p else False
@@ -273,11 +331,11 @@ class Person(object):
         if made_purchase:
             # Determine if this is an outlier order or regular order
             if numpy.random.random() < self.outlier_frequency:
-                purchase_amount = self.outlier_purchase_amount()
+                purchase_amount = self.outlier_purchase_amount(world.world_time)
             else:
-                purchase_amount = self.purchase_amount()
+                purchase_amount = self.purchase_amount(world.world_time)
 
-            transaction = Transaction(timestamp=current_time, amount=purchase_amount)
+            transaction = Transaction(world.world_time, amount=purchase_amount)
             self.last_transaction = transaction
         else:
             transaction = None
@@ -285,7 +343,7 @@ class Person(object):
         return transaction
 
 
-    def purchase_amount(self, current_time):
+    def purchase_amount(self, world):
         """Randomly sample a gamma distribution with special outliers determine the amount of a purchase.
 
         Mean purchase amount depends on: average transaction amount, segment, income, taste, offer
@@ -304,18 +362,9 @@ class Person(object):
         min_mean_purchase = 1.0
         max_mean_purchase = 25.0
 
-        slope = (max_income - min_income)/(max_mean_purchase - min_mean_purchase)
+        income_adjusted_purchase_sensitivity = self.bounded_response(self.income, min_income, max_income, min_mean_purchase, max_mean_purchase)
 
-        if self.income <= min_income:
-            adjusted_income = 0.0
-        elif self.income <= max_income:
-            adjusted_income = self.income
-        else:
-            adjusted_income = max_income
-
-        income_adjusted_purchase_sensitivity = min_mean_purchase + slope*adjusted_income
-
-        beta = self.purchase_amount_sensitivity
+        beta = self.purchase_amount_sensitivity.weights
         x = numpy.concatenate((numpy.array((1,
                                             income_adjusted_purchase_sensitivity)),
                                self.marketing_segment.weights,
@@ -338,18 +387,70 @@ class Person(object):
 
         # todo: add outliers from a different distribution
 
-    def outlier_purchase_amount(self, current_time):
+    def outlier_purchase_amount(self, world):
         """Randomly sample an outlier distribution to determine the amount of a purchase."""
-        raise NotImplementedError
+        print 'WARNING - Under Construction'
+
+        return 0
+
 
 class TestPerson(unittest.TestCase):
     """Test class for Person."""
 
     def setUp(self):
         self.person = Person(became_member_on=12345)
+        self.world = World()
 
 
     def test_person(self):
         self.assertTrue(self.person)
 
 
+    def test_update_state(self):
+        self.person.update_state(self.world)
+        self.assertTrue(1)
+
+
+    def test_simulate(self):
+        self.person.simulate(self.world)
+        self.assertTrue(1)
+
+    def test_bounded_response(self):
+        min_x = 2
+        max_x = 5
+        f_of_min_x = 10
+        f_of_max_x = 20
+
+        x = min_x - 1
+        self.assertTrue(Person.bounded_response(x, min_x, max_x, f_of_min_x, f_of_max_x) == f_of_min_x)
+
+        x = min_x
+        self.assertTrue(Person.bounded_response(x, min_x, max_x, f_of_min_x, f_of_max_x) == f_of_min_x)
+
+        x = 0.5*(min_x + max_x)
+        self.assertTrue(Person.bounded_response(x, min_x, max_x, f_of_min_x, f_of_max_x) == 0.5*(f_of_min_x + f_of_max_x))
+
+        x = max_x
+        self.assertTrue(Person.bounded_response(x, min_x, max_x, f_of_min_x, f_of_max_x) == f_of_max_x)
+
+        x = max_x + 1
+        self.assertTrue(Person.bounded_response(x, min_x, max_x, f_of_min_x, f_of_max_x) == f_of_max_x)
+
+
+    def test_view_offer(self):
+        person_view_offer_sensitivity = Categorical(['background', 'offer_age', 'web', 'email', 'mobile', 'social'],
+                                                    [0, -1, 1, 1, 1, 1])
+        offer_channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 1))
+        offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 1, 0))
+
+        discount = Offer(0, valid_from=10, valid_until=20, difficulty=10, reward=2, channel=offer_channel,
+                         type=offer_type)
+        person = Person(became_member_on='20170716', view_offer_sensitivity=person_view_offer_sensitivity)
+        person.last_unviewed_offer = discount
+
+        world = copy.deepcopy(self.world)
+        world.world_time = 0
+
+        person.view_offer(world)
+
+        self.assertTrue(True)

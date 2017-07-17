@@ -35,9 +35,9 @@ class World(object):
     """Coordinate the delivery of offers to a population and simulation of the reaction."""
 
     def __init__(self,
-                 world_time = Constants.BEGINNING_OF_TIME,
+                 world_time=Constants.BEGINNING_OF_TIME,
                  real_time_tick=1.0,
-                 world_time_tick=24,
+                 world_time_tick=1,
                  offers_path='/offers',
                  events_path='/events'):
         """Initialize World.
@@ -49,6 +49,7 @@ class World(object):
             events_path:   path to folder where simulated events are stored
         """
         # World parameters
+        self.world_time = world_time
         self.real_time_tick = real_time_tick
         self.world_time_tick = world_time_tick
         self.offers_path = offers_path
@@ -107,6 +108,8 @@ class Categorical(object):
     """
     names = numpy.array(tuple())
     weights = numpy.array(tuple())
+    zeros = numpy.zeros(tuple())
+    ones = numpy.ones(tuple())
 
     def __init__(self, names=None, weights=None):
         """Initialize Segment."""
@@ -115,8 +118,12 @@ class Categorical(object):
             assert len(set(names)) == len(names), 'ERROR - Not all names are unique.'
             self.names = numpy.array(names)
 
+            # these are handy defaults to have around - but consider dropping if there are space issues
+            self.zeros = numpy.zeros(len(names), dtype=numpy.int)
+            self.ones = numpy.ones(len(names), dtype=numpy.int)
+
             if weights is None:
-                self.weights = numpy.ones(len(names), dtype=numpy.int)
+                self.weights = self.ones.copy()
             else:
                 assert len(names) == len(weights), 'ERROR - The number of names does not match the number of weights.'
                 self.weights = numpy.array(weights)
@@ -172,9 +179,10 @@ class Categorical(object):
     def set_equal(self, other):
         """A limited equality operator to assign the names and values of other to self, resizing self if necessary."""
 
-        self.names = other.names
-        self.weights = other.weights
-
+        self.names = other.names.copy()
+        self.weights = other.weights.copy()
+        self.zeros = other.zeros.copy()
+        self.ones = other.ones.copy()
 
     def compare_equality(self, other):
         """Check if two Categoricals have the same names and weights in any order."""
@@ -194,6 +202,17 @@ class Categorical(object):
             self_equals_other = False
 
         return self_equals_other
+
+
+    def compare_names(self, other):
+        """True if both Categoricals have the same names in any order, else False."""
+        if set(self.names) == set(other.names):
+            self_same_names_as_other = True
+        else:
+            self_same_names_as_other = False
+
+        return self_same_names_as_other
+
 
 
     def set_order(self, names):
@@ -350,8 +369,8 @@ class Offer(Event):
     difficulty = None
     reward = None
 
-    channel = Categorical(('web', 'email', 'mobile'))
-    type = Categorical(('bogo', 'discount', 'informational'))
+    channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 1))
+    type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
 
     def __init__(self, timestamp_received, **kwargs):
         self.timestamp = timestamp_received
@@ -370,6 +389,19 @@ class Offer(Event):
 
         assert numpy.sum(self.channel.weights) > 0, 'ERROR - offer must have at least one channel'
         assert numpy.sum(self.type.weights) == 1,   'ERROR - offer must have exactly one type'
+
+
+    @staticmethod
+    def print_help():
+        offer = Offer(0)
+
+        print 'timestamp: int between {} and {}'.format(Constants.BEGINNING_OF_TIME, Constants.END_OF_TIME)
+        print 'valid_from: int between {} and {}'.format(Constants.BEGINNING_OF_TIME, Constants.END_OF_TIME)
+        print 'valid_to: int between {} and {}'.format(Constants.BEGINNING_OF_TIME, Constants.END_OF_TIME)
+        print 'difficulty: positive numeric'
+        print 'reward: positive numeric'
+        print 'channel: Categorical({})'.format(offer.channel.names)
+        print 'type: Categorical({})'.format(offer.type.names)
 
 
     def is_active(self, current_time):
