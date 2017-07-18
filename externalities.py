@@ -8,6 +8,7 @@ Classes: Constants, World,
 import logging
 import unittest
 
+import time
 import uuid
 import json
 
@@ -36,7 +37,7 @@ class World(object):
 
     def __init__(self,
                  world_time=Constants.BEGINNING_OF_TIME,
-                 real_time_tick=1.0,
+                 real_time_tick=1.000,
                  world_time_tick=1):
         """Initialize World.
 
@@ -54,9 +55,38 @@ class World(object):
         logging.info('World initialized')
 
 
-    def wait(self):
-        """Sit idle during the realtime tick period."""
-        raise NotImplementedError()
+    def to_serializable(self):
+        """Create a serializable representation."""
+        world_dict = {'world_time':      self.world_time,
+                      'real_time_tick':  self.real_time_tick,
+                      'world_time_tick': self.world_time_tick}
+
+        return world_dict
+
+
+    @staticmethod
+    def from_dict(world_dict):
+
+        world = World(     world_time=world_dict.get('world_time', Constants.BEGINNING_OF_TIME),
+                       real_time_tick=world_dict.get('real_time_tick', 1.0),
+                      world_time_tick=world_dict.get('world_time_tick', 1))
+
+        return world
+
+
+    @staticmethod
+    def from_json(json_string):
+        world_dict = json.loads(json_string)
+        world = World.from_dict(world_dict)
+
+        return world
+
+
+    def to_json(self):
+        """Create a json representation."""
+        json_string = json.dumps(self.to_serializable())
+
+        return json_string
 
 
     def clean_offers(self):
@@ -69,7 +99,7 @@ class World(object):
 
         At a minimum this increases simulation time by one tick."""
 
-        WAIT
+        time.sleep(self.real_time_tick)
 
         self.world_time += self.world_time_tick
 
@@ -88,7 +118,20 @@ class TestWorld(unittest.TestCase):
     """Test class for World."""
 
     def setUp(self):
-        self.World = World()
+        self.world = World()
+
+
+    def test_serializaton(self):
+        world_dict = self.world.to_serializable()
+        world_reconstituted = World.from_dict(world_dict)
+        world_reconstituted_dict = world_reconstituted.to_serializable()
+        self.assertTrue(world_reconstituted_dict == world_dict)
+
+        world_json = self.world.to_json()
+        world_reconstituted = World.from_json(world_json)
+        world_reconstituted_dict = world_reconstituted.to_serializable()
+        self.assertTrue(world_reconstituted_dict == world_dict)
+
 
 
 class Categorical(object):
@@ -381,8 +424,8 @@ class Event(object):
     @staticmethod
     def from_dict(event_dict):
         assert event_dict.get('type') == 'event', 'ERROR - Dictionary must assert that it represents an Event, but type is {}.'.format(event_dict.get('type'))
-        event = Event(            event_dict.get('timestamp'), \
-                            id   =event_dict.get('id'),        \
+        event = Event(            event_dict.get('timestamp'),
+                            id   =event_dict.get('id'),
                             value=event_dict.get('value'))
 
         return event

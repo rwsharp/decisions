@@ -10,6 +10,11 @@ indiviudals to offers.
 import logging
 import unittest
 
+import os.path
+import glob
+import shutil
+import json
+
 from externalities import World, Offer, Transaction, Event, Categorical
 from person import Person
 
@@ -19,8 +24,9 @@ class Population(object):
 
     def __init__(self,
                  world,
-                 people,
-                 offers_path='/offers',
+                 people=None,
+                 portfolio=None,
+                 deliveries_path='/deliveries',
                  events_path='/events'):
         """Initialize Population.
 
@@ -28,18 +34,68 @@ class Population(object):
         """
 
         assert isinstance(world, World), 'ERROR - world is not of World type.'
-
-        assert all(map(lambda p: isinstance(p, Person), people)), 'ERROR - some of the items in people are not Person type.'
-        id_list = [p.id for p in people]
-        assert len(set(id_list)) == len(id_list), 'ERROR - The same individual appears in people more than once.'
-
         self.world = world
-        self.population = dict([(p.id, p) for p in people])
-        self.offers_path = offers_path
+
+        if people is None:
+            self.people = dict()
+        else:
+            assert all(map(lambda p: isinstance(p, Person), people)), 'ERROR - some of the items in people are not Person type.'
+            id_list = [p.id for p in people]
+            assert len(set(id_list)) == len(id_list), 'ERROR - The same individual appears in people more than once.'
+
+            self.people = dict([(p.id, p) for p in people])
+
+        if portfolio is None:
+            self.portfolio = dict()
+        else:
+            assert all(map(lambda o: isinstance(o, Offer), portfolio)), 'ERROR - some of the items in portfolio are not Offer type.'
+            id_list = [o.id for o in portfolio]
+            assert len(set(id_list)) == len(id_list), 'ERROR - The same offer appears in the portfolio more than once.'
+
+            self.portfolio = dict([(o.id, o) for o in portfolio])
+
+        self.deliveries_path = deliveries_path
         self.events_path = events_path
-        self.offer_portfolio = dict()
 
         logging.info('Population initialized')
+
+
+    def to_serializable(self):
+        """Create a serializable representation."""
+        population_dict = {'world':           self.world.to_serializable(),
+                           'people':          [person.to_serializable() for person in self.people.values()],
+                           'portfolio':       [offer.to_serializable() for offer in self.portfolio.values()],
+                           'deliveries_path': self.deliveries_path,
+                           'events_path':     self.events_path}
+
+        return population_dict
+
+
+    @staticmethod
+    def from_dict(population_dict):
+
+        population = Population(World.from_dict(population_dict.get('world')),
+                                people=[Person.from_dict(person_dict) for person_dict in population_dict.get('people')],
+                                portfolio=[Offer.from_dict(offer_dict) for offer_dict in population_dict.get('portfolio')],
+                                deliveries_path=population_dict.get('deliveries_path'),
+                                events_path=population_dict.get('events_path'))
+
+        return population
+
+
+    @staticmethod
+    def from_json(json_string):
+        population_dict = json.loads(json_string)
+        population = Population.from_dict(population_dict)
+
+        return population
+
+
+    def to_json(self):
+        """Create a json representation."""
+        json_string = json.dumps(self.to_serializable())
+
+        return json_string
 
 
     def simulate(self, n_ticks):
@@ -48,10 +104,66 @@ class Population(object):
         Simulation proceeds for n steps. The simulated duration of each step is a property of the World.
         """
         for t in range(n_ticks):
-            offers = self.get_offers(cleanup=True)
-            self.update_people(offers)
+            deliveries = self.read_deliveries(cleanup=True)
+            self.update_people(deliveries)
             self.world.update()
             self.report()
+
+
+    def report(self):
+        logging.info('Report')
+
+
+    def read_deliveries(self, cleanup=False, delimiter='|'):
+        """Read offer data if present in offers_path.
+
+        An offers file should have one two columns separated by a delimiter (a .csv)
+        There should be no header
+        schema: 'recipient_id|offer_id'
+        """
+
+        deliveries = dict()
+        delivery_file_names = glob.glob(os.path.join(self.deliveries_path, '*'))
+        for delivery_file_name in delivery_file_names:
+            if os.path.isfile(delivery_file_name):
+                with open(delivery_file_name, 'r') as delivery_file:
+                    for line in delivery_file:
+                        data = line.strip().split(delimiter)
+                        if len(data) == 2:
+                            recipient_id, offer_id = data
+                            deliveries[recipient_id] = offer_id
+
+            if cleanup:
+                os.remove(delivery_file_name)
+
+        return deliveries
+
+
+    def update_people(self, deliveries):
+        """Simulate a single timestep for everybody in the population."""
+
+        self.deliver_offers(deliveries)
+
+        # todo: parallelize this loop
+        for id, person in self.people.iteritems():
+            person.update(self.world)
+
+
+    def deliver_offers(self, deliveries):
+        """Go through the offer list and deliver to recipients."""
+
+        for recipient_id, offer_id in deliveries.iteritems():
+            recipient = self.people.get(recipient_id)
+            if recipient is None:
+                message = 'WARNING - recipient {} is not in the population, cannot deliver.'.format(recipient_id)
+                logging.warning(message)
+            else:
+                offer = self.offer_portfolio.get(offer_id)
+                if offer is None:
+                    message = 'WARNING - offer {} is not in the portfolio, cannot deliver.'.format(offer_id)
+                    logging.warning(message)
+                else:
+                    recipient.receive_offer(self.world, offer)
 
 
     def read_offer_portfolio(self, portfolio_file_name):
@@ -75,39 +187,87 @@ class Population(object):
                         raise ValueError('ERROR - Offer id {} is not unique. It is already present in the offer portfolio.'.format(offer_id))
 
 
+    def read_population(self, population_file_name):
+        """Read in a population from a file.
 
-    def get_offer_delivery_instructions(self, cleanup=False):
-        """Read offer data if present in offers_path.
-
-        An offers file should have one json object per line. The json object has the following format...
-        {'recipient_id': uuid_of_Person, 'offer_id': uuid_of_Offer}
+        A population file contains one json object per line.
+        Each json object represents a Person.
         """
 
+        with open(population_file_name, 'r') as population_file:
+            for line in population_file:
+                person_json = line.strip()
 
-    def update_people(self, offers):
-        """Simulate a single timestep for everybody in the population."""
-
-        self.deliver_offers(offers)
-
-        # todo: parallelize this loop
-        for id, person in self.people.iteritems():
-            person.update(self.world)
-
-
-    def deliver_offers(self, offers):
-        """Go through the offer list and deliver to recipients."""
-
-        for recipient_id, offer in offers:
-            recipient = self.people.get(recipient_id)
-            if recipient is None:
-                message = 'WARNING - recipient {} is not in the population, cannot deliver.'.format(recipient_id)
-                logging.warning(message)
-            else:
-                recipient.receive_offer(self.world, offer)
+                # skip blank lines
+                if person_json != '':
+                    person = Person.from_json(person_json)
+                    person_id = person['id']
+                    if person_id not in self.people:
+                        self.people[id] = person
+                    else:
+                        raise ValueError('ERROR - Person id {} is not unique. It is already present in the population.'.format(person_id))
 
 
 class TestPopulation(unittest.TestCase):
     """Test class for Population."""
 
     def setUp(self):
-        self.Population = Population()
+        self.world = World(real_time_tick=0.200)
+
+        person_0 = Person(12345)
+        person_1 = Person(23456)
+        person_2 = Person(34567)
+
+        offer_a = Offer(0)
+        offer_b = Offer(1)
+
+        self.delimiter = '|'
+        deliveries_path = 'data/delivery'
+        self.deliveries_file_name = 'data/test_deliveries.csv'
+        self.deliveries = [(person_0.id, offer_a.id),
+                           (person_1.id, offer_a.id),
+                           (person_2.id, offer_b.id)]
+
+        with open(self.deliveries_file_name, 'w') as deliveries_file:
+            for delivery in self.deliveries:
+                print >> deliveries_file, self.delimiter.join(map(str, delivery))
+
+        self.population = Population(self.world,
+                                     people=(person_0, person_1, person_2),
+                                     portfolio=(offer_a, offer_b),
+                                     deliveries_path=deliveries_path,
+                                     events_path='data/events')
+
+
+    def tearDown(self):
+        if os.path.isfile(self.deliveries_file_name):
+            os.remove(self.deliveries_file_name)
+
+
+    def test_simulate(self):
+        self.population.simulate(n_ticks=5)
+        self.assertTrue(True)
+
+
+    def test_read_deliveries(self):
+        data_file_names = glob.glob(os.path.join(self.population.deliveries_path, '*'))
+        for data_file_name in data_file_names:
+            os.remove(data_file_name)
+        shutil.copy(self.deliveries_file_name, self.population.deliveries_path)
+        deliveries = self.population.read_deliveries(cleanup=True)
+        self.assertTrue(len(deliveries) > 0)
+        data_file_names = glob.glob(os.path.join(self.population.deliveries_path, '*'))
+        self.assertTrue(len(data_file_names) == 0)
+        
+    
+    def test_serializaton(self):
+        population_dict = self.population.to_serializable()
+        population_reconstituted = Population.from_dict(population_dict)
+        population_reconstituted_dict = population_reconstituted.to_serializable()
+        self.assertTrue(population_reconstituted_dict == population_dict)
+
+        population_json = self.population.to_json()
+        population_reconstituted = Population.from_json(population_json)
+        population_reconstituted_dict = population_reconstituted.to_serializable()
+        self.assertTrue(population_reconstituted_dict == population_dict)
+

@@ -206,6 +206,7 @@ class Person(object):
 
         logging.info('Person initialized')
 
+
     def to_serializable(self):
         """Create a serializable representation."""
         person_dict = {'id':                          self.id,
@@ -286,7 +287,7 @@ class Person(object):
         return
 
 
-    def simulate(self, world):
+    def update(self, world):
         """Simulate the actions of an individual.
 
         There actions a person can take are:
@@ -337,8 +338,9 @@ class Person(object):
         offer.timestamp = received_time
 
         # update history
-        self.history.append(offer)
-        self.last_unviewed_offer = offer
+        offer_copy = copy.deepcopy(offer)
+        self.history.append(offer_copy)
+        self.last_unviewed_offer = offer_copy
 
         logging.debug('{} received offer {} at {}'.format(self.id, offer.id, received_time))
 
@@ -448,6 +450,7 @@ class Person(object):
                 purchase_amount = self.purchase_amount(world)
 
             transaction = Transaction(world.world_time, amount=purchase_amount)
+            self.history.append(transaction)
             self.last_transaction = transaction
         else:
             transaction = None
@@ -588,7 +591,7 @@ class TestPerson(unittest.TestCase):
 
 
     def test_simulate(self):
-        self.person.simulate(self.world)
+        self.person.update(self.world)
         self.assertTrue(1)
 
 
