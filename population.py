@@ -85,7 +85,16 @@ class Population(object):
 
     @staticmethod
     def from_json(json_string):
-        population_dict = json.loads(json_string)
+        """Read a population from json format."""
+        # todo: update other from_json methods to do file check as well
+        if os.path.isfile(json_string):
+            # it's json in a file
+            with open(json_string, 'r') as population_file:
+                population_dict = json.load(population_file)
+        else:
+            # it's a json string
+            population_dict = json.loads(json_string)
+
         population = Population.from_dict(population_dict)
 
         return population
@@ -149,6 +158,7 @@ class Population(object):
         for id, person in self.people.iteritems():
             transcript.extend(person.update(self.world))
         self.write_to_transcript_file(transcript)
+
 
     def write_to_transcript_file(self, transcript):
         with open(self.transcript_file_name, 'a') as transcript_file:
@@ -224,9 +234,9 @@ class TestPopulation(unittest.TestCase):
     def setUp(self):
         self.world = World(real_time_tick=0.200)
 
-        person_0 = Person(12345)
-        person_1 = Person(23456)
-        person_2 = Person(34567)
+        person_0 = Person('20170101')
+        person_1 = Person('20170202')
+        person_2 = Person('20170707')
 
         offer_a = Offer(0)
         offer_b = Offer(1)

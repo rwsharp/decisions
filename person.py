@@ -12,6 +12,7 @@ import unittest
 
 import copy
 import json
+import datetime
 
 import uuid
 import numpy
@@ -107,14 +108,23 @@ class Person(object):
         # Intrinsic Attributes
         ######################
 
-        self.id = kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
-        self.dob = kwargs.get('dob', '19010101') # set a sneaky default value for unknown
-        self.gender = kwargs.get('gender', None)
-        self.became_member_on = became_member_on
-        self.income = kwargs.get('income', None)
+        self.id =     kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
+        self.dt_fmt = '%Y%m%d'
+        try:
+            datetime.datetime.strptime(kwargs.get('dob'), self.dt_fmt)
+            self.dob = kwargs.get('dob')
+        except:
+            self.dob = '19010101'
+        self.gender = kwargs.get('gender')
+        try:
+            datetime.datetime.strptime(became_member_on, self.dt_fmt)
+            self.became_member_on = became_member_on
+        except:
+            raise ValueError('ERROR - became_member_on has invalid format (should be: {}). became_member_on={}'.format(self.dt_fmt, became_member_on))
+        self.income = kwargs.get('income')
 
         default_taste = Categorical(self.taste_names)
-        kwargs_taste = kwargs.get('taste', None)
+        kwargs_taste = kwargs.get('taste')
         if kwargs_taste is not None:
             assert default_taste.compare_names(kwargs_taste), 'ERROR - keyword argument taste must have names = {}'.format(default_taste.names)
             self.taste = kwargs_taste
@@ -144,9 +154,9 @@ class Person(object):
         # sufficient purchase. If two offers are open simultanrously, then Person can get double credit (win both) with
         # a single purchase.
 
-        self.last_transaction    = kwargs.get('last_transaction', None)
-        self.last_unviewed_offer = kwargs.get('last_unviewed_offer', None)
-        self.last_viewed_offer   = kwargs.get('last_viewed_offer', None)
+        self.last_transaction    = kwargs.get('last_transaction')
+        self.last_unviewed_offer = kwargs.get('last_unviewed_offer')
+        self.last_viewed_offer   = kwargs.get('last_viewed_offer')
 
         #########
         # History
@@ -595,23 +605,18 @@ class TestPerson(unittest.TestCase):
     """Test class for Person."""
 
     def setUp(self):
-        self.offer = Offer(10, \
-                           channel=Categorical(('web', 'email', 'mobile', 'social'), (0, 1, 1, 1)), \
+        self.offer = Offer(10,
+                           channel=Categorical(('web', 'email', 'mobile', 'social'), (0, 1, 1, 1)),
                            offer_type=Categorical(('bogo', 'discount', 'informational'), (0, 0, 1)))
         self.transaction = Transaction(20, amount=1.00)
         self.world = World()
 
-        self.person = Person(became_member_on=12345,
+        self.person = Person(became_member_on='20170101',
                              history=[self.offer, self.transaction])
 
 
     def test_person(self):
         self.assertTrue(self.person)
-
-
-    def test_update_state(self):
-        self.person.update_state(self.world)
-        self.assertTrue(1)
 
 
     def test_simulate(self):

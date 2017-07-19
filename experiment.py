@@ -18,11 +18,19 @@ dt_fmt = '%Y%m%d'
 now = datetime.datetime.strptime('20170718', dt_fmt)
 
 def create_people(n):
+    dob_optout_rate = 0.1
 
     people = list()
     for i in range(n):
-        dob = (now - datetime.timedelta(days=numpy.random.poisson(365*25))).strftime(dt_fmt)
-        people.append(Person(dob))
+        became_member_on = (now - datetime.timedelta(days=numpy.random.choice(range(700)))).strftime(dt_fmt)
+
+        if numpy.random.random() < 1.0 - dob_optout_rate:
+            dob = (now - datetime.timedelta(days=numpy.random.poisson(365*25))).strftime(dt_fmt)
+        else:
+            dob = None
+
+        people.append(Person(became_member_on,
+                             dob=dob))
 
     return people
 
@@ -67,11 +75,17 @@ def main():
     deliveries_path = 'data/delivery'
     transcripts_file_name = 'data/transcript.json'
 
+    if os.path.isfile(transcripts_file_name):
+        os.remove(transcripts_file_name)
+
     population = Population(world,
                             people=people,
                             portfolio=portfolio,
                             deliveries_path=deliveries_path,
                             transcript_file_name=transcripts_file_name)
+
+    with open('data/population.json', 'w') as population_file:
+        print >> population_file, population.to_json()
 
     deliveries = assign_offers(population)
 
