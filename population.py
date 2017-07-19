@@ -27,7 +27,7 @@ class Population(object):
                  people=None,
                  portfolio=None,
                  deliveries_path='/deliveries',
-                 events_path='/events'):
+                 transcript_file_name='/transcript.json'):
         """Initialize Population.
 
         Args:
@@ -55,7 +55,7 @@ class Population(object):
             self.portfolio = dict([(o.id, o) for o in portfolio])
 
         self.deliveries_path = deliveries_path
-        self.events_path = events_path
+        self.transcript_file_name = transcript_file_name
 
         logging.info('Population initialized')
 
@@ -66,7 +66,7 @@ class Population(object):
                            'people':          [person.to_serializable() for person in self.people.values()],
                            'portfolio':       [offer.to_serializable() for offer in self.portfolio.values()],
                            'deliveries_path': self.deliveries_path,
-                           'events_path':     self.events_path}
+                           'transcript_file_name':     self.transcript_file_name}
 
         return population_dict
 
@@ -78,7 +78,7 @@ class Population(object):
                                 people=[Person.from_dict(person_dict) for person_dict in population_dict.get('people')],
                                 portfolio=[Offer.from_dict(offer_dict) for offer_dict in population_dict.get('portfolio')],
                                 deliveries_path=population_dict.get('deliveries_path'),
-                                events_path=population_dict.get('events_path'))
+                                transcript_file_name=population_dict.get('transcript_file_name'))
 
         return population
 
@@ -145,12 +145,20 @@ class Population(object):
         self.deliver_offers(deliveries)
 
         # todo: parallelize this loop
+        transcript = list()
         for id, person in self.people.iteritems():
-            person.update(self.world)
+            transcript.extend(person.update(self.world))
+        self.write_to_transcript_file(transcript)
+
+    def write_to_transcript_file(self, transcript):
+        with open(self.transcript_file_name, 'a') as transcript_file:
+            print >> transcript_file, '\n'.join(transcript)
 
 
     def deliver_offers(self, deliveries):
         """Go through the offer list and deliver to recipients."""
+
+        transcript = list()
 
         for recipient_id, offer_id in deliveries.iteritems():
             recipient = self.people.get(recipient_id)
@@ -158,12 +166,14 @@ class Population(object):
                 message = 'WARNING - recipient {} is not in the population, cannot deliver.'.format(recipient_id)
                 logging.warning(message)
             else:
-                offer = self.offer_portfolio.get(offer_id)
+                offer = self.portfolio.get(offer_id)
                 if offer is None:
                     message = 'WARNING - offer {} is not in the portfolio, cannot deliver.'.format(offer_id)
                     logging.warning(message)
                 else:
-                    recipient.receive_offer(self.world, offer)
+                    transcript.extend(recipient.receive_offer(self.world, offer))
+
+        self.write_to_transcript_file(transcript)
 
 
     def read_offer_portfolio(self, portfolio_file_name):
@@ -236,7 +246,7 @@ class TestPopulation(unittest.TestCase):
                                      people=(person_0, person_1, person_2),
                                      portfolio=(offer_a, offer_b),
                                      deliveries_path=deliveries_path,
-                                     events_path='data/events')
+                                     transcript_file_name='data/transcript.json')
 
 
     def tearDown(self):
@@ -245,6 +255,13 @@ class TestPopulation(unittest.TestCase):
 
 
     def test_simulate(self):
+        # place delivery file in deliveries folder
+        data_file_names = glob.glob(os.path.join(self.population.deliveries_path, '*'))
+        for data_file_name in data_file_names:
+            os.remove(data_file_name)
+        shutil.copy(self.deliveries_file_name, self.population.deliveries_path)
+
+        # run simulation
         self.population.simulate(n_ticks=5)
         self.assertTrue(True)
 

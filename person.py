@@ -277,14 +277,27 @@ class Person(object):
         return json_string
 
 
-    def update_state(self, world):
-        """Update customer state variables.
+    def update_offer_state(self, world, transaction):
+        """Update state of offers when a customer makes a transaction.
 
-        The customer is only influenced by the last viewed offer (older offers are forgotten). If the last viewed offer
-        is currently active, update the active viewed offer.
+        Determine which offers are open, whether they've been completed, and add transaction amount toward completion.
         """
 
-        return
+        transcript_items = list()
+
+        # we need to go through all events since an offer could be open ended
+        for event in self.history:
+            if isinstance(event, Offer):
+                if event.reward > 0:
+                    if event.is_active(world.world_time):
+                        event.progress += transaction.amount
+                        if event.progress >= event.difficulty:
+                            if not event.completed:
+                                event.completed = True
+                                transcript = event.offer_completed_transacript(world, self.id)
+                                transcript_items.append(transcript)
+
+        return transcript_items
 
 
     def update(self, world):
@@ -321,13 +334,21 @@ class Person(object):
         the probability decreases with time
         """
 
+        transcript_items = list()
+
         viewed_offer_event = self.view_offer(world)
         if viewed_offer_event:
+            transcript_items.append(viewed_offer_event.viewed_offer_transcript(world, self.id))
             logging.debug('Viewed offer at {}: {}'.format(world.world_time, self.last_viewed_offer.__dict__))
 
         purchase_event = self.make_purchase(world)
         if purchase_event:
+            transcript_items.append(purchase_event.transcript(self.id))
             logging.debug('Made purchase at {}: {}'.format(world.world_time, self.last_transaction.__dict__))
+
+            transcript_items.extend(self.update_offer_state(world, purchase_event))
+
+        return transcript_items
 
 
     def receive_offer(self, world, offer):
@@ -342,7 +363,10 @@ class Person(object):
         self.history.append(offer_copy)
         self.last_unviewed_offer = offer_copy
 
+        transcript_items = list((offer.transcript(self.id),))
         logging.debug('{} received offer {} at {}'.format(self.id, offer.id, received_time))
+
+        return transcript_items
 
 
     def view_offer(self, world):
