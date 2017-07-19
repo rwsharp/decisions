@@ -8,12 +8,15 @@ Classes: Constants, World,
 import logging
 import unittest
 
+import types
 import time
 import uuid
 import json
 
 import numpy
 
+
+numeric_types = (types.IntType, types.LongType, types.FloatType)
 
 class Constants(object):
     """Universal constants"""
@@ -68,8 +71,8 @@ class World(object):
     def from_dict(world_dict):
 
         world = World(     world_time=world_dict.get('world_time', Constants.BEGINNING_OF_TIME),
-                       real_time_tick=world_dict.get('real_time_tick', 1.0),
-                      world_time_tick=world_dict.get('world_time_tick', 1))
+                           real_time_tick=world_dict.get('real_time_tick', 1.0),
+                           world_time_tick=world_dict.get('world_time_tick', 1))
 
         return world
 
@@ -425,8 +428,8 @@ class Event(object):
     def from_dict(event_dict):
         assert event_dict.get('type') == 'event', 'ERROR - Dictionary must assert that it represents an Event, but type is {}.'.format(event_dict.get('type'))
         event = Event(            event_dict.get('timestamp'),
-                            id   =event_dict.get('id'),
-                            value=event_dict.get('value'))
+                                  id   =event_dict.get('id'),
+                                  value=event_dict.get('value'))
 
         return event
 
@@ -508,17 +511,27 @@ class Offer(Event):
     offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
 
     def __init__(self, timestamp_received, **kwargs):
-        valid_kwargs = set(('id', 'valid_from', 'valid_until', 'difficulty', 'reward', 'channel', 'offer_type'))
+        valid_kwargs = {'id', 'valid_from', 'valid_until', 'difficulty', 'reward', 'progress', 'completed', 'channel', 'offer_type'}
         kwargs_name_set = set(kwargs.keys())
-        assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: {}'.format(kwargs_name_set.difference(valid_kwargs))
+        assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: \n{}\n{}\n{}'.format(kwargs_name_set, valid_kwargs, kwargs_name_set - valid_kwargs)
 
         self.type = 'offer'
         self.id = kwargs.get('id') if kwargs.get('id') is not None else uuid.uuid4().hex
         self.timestamp = timestamp_received
         self.valid_from = kwargs.get('valid_from', Constants.BEGINNING_OF_TIME)
         self.valid_until = kwargs.get('valid_until', Constants.END_OF_TIME)
-        self.difficulty = kwargs.get('difficulty', 0)
-        self.reward = kwargs.get('reward', 0)
+
+        # A customer must spend an amount greater than 'difficulty' during the validity period to earn 'reward'
+        # 'progress' is the amount spend during the validity period (and should be updated iteratively)
+        # 'completed' is a convenience flag indicating whether the offer was completed
+        self.difficulty = kwargs.get('difficulty', 0.00)
+        assert isinstance(self.difficulty, numeric_types), 'ERROR - difficulty must be numeric'
+        self.reward = kwargs.get('reward', 0.00)
+        assert isinstance(self.reward, numeric_types), 'ERROR - reward must be numeric'
+        self.progress = kwargs.get('progress', 0.00)
+        assert isinstance(self.progress, numeric_types), 'ERROR - progress must be numeric'
+        self.completed = kwargs.get('completed', False)
+        assert isinstance(self.completed, types.BooleanType), 'ERROR - completed must be Boolean'
 
         x = kwargs.get('channel')
         if x is not None:
@@ -532,6 +545,39 @@ class Offer(Event):
         assert numpy.sum(self.offer_type.weights) == 1,   'ERROR - offer must have exactly one offer_type'
 
 
+    def transcript(self, recipient_id):
+        trs = {'time': self.timestamp,
+               'person': recipient_id,
+               'event': 'offer received',
+               'value': {
+                   'offer id': self.id
+               }}
+
+        return json.dumps(trs)
+
+
+    def viewed_offer_transcript(self, world, recipient_id):
+        trs = {'time': world.world_time,
+               'person': recipient_id,
+               'event': 'offer viewed',
+               'value': {
+                   'offer id': self.id
+               }}
+
+        return json.dumps(trs)
+
+
+    def offer_completed_transacript(self, world, recipient_id):
+        trs = {'time': world.world_time,
+               'person': recipient_id,
+               'event': 'offer completed',
+               'value': {
+                   'offer_id': self.id,
+                   'reward': self.reward}}
+
+        return json.dumps(trs)
+
+
     def to_serializable(self):
         offer_dict = {'type':        self.type,
                       'timestamp':   self.timestamp,
@@ -539,6 +585,8 @@ class Offer(Event):
                       'valid_from':  self.valid_from,
                       'valid_until': self.valid_until,
                       'difficulty':  self.difficulty,
+                      'progress':    self.progress,
+                      'completed':   self.completed,
                       'reward':      self.reward,
                       'channel':     self.channel.to_serializable(),
                       'offer_type':  self.offer_type.to_serializable()
@@ -550,13 +598,15 @@ class Offer(Event):
     def from_dict(offer_dict):
         assert offer_dict.get('type') == 'offer', 'ERROR - Dictionary must assert that it represents an Offer, but type is {}.'.format(offer_dict.get('type'))
 
-        offer = Offer(            offer_dict.get('timestamp'),                                    \
-                                  id         =offer_dict.get('id'),                               \
-                                  valid_from =offer_dict.get('valid_from'),                       \
-                                  valid_until=offer_dict.get('valid_until'),                      \
-                                  difficulty =offer_dict.get('difficulty'),                       \
-                                  reward     =offer_dict.get('reward'),                           \
-                                  channel    =Categorical.from_dict(offer_dict.get('channel')),   \
+        offer = Offer(            offer_dict.get('timestamp'),
+                                  id         =offer_dict.get('id'),
+                                  valid_from =offer_dict.get('valid_from'),
+                                  valid_until=offer_dict.get('valid_until'),
+                                  difficulty =offer_dict.get('difficulty'),
+                                  reward     =offer_dict.get('reward'),
+                                  progress   =offer_dict.get('progress'),
+                                  completed  =offer_dict.get('completed'),
+                                  channel    =Categorical.from_dict(offer_dict.get('channel')),
                                   offer_type =Categorical.from_dict(offer_dict.get('offer_type'))
                                   )
         return offer
@@ -630,6 +680,17 @@ class Transaction(Event):
         self.amount = kwargs.get('amount', None)
 
 
+    def transcript(self, purchaser_id):
+        trs = {'time': self.timestamp,
+               'person': purchaser_id,
+               'event': 'transaction',
+               'value': {
+                   'amount': self.amount
+               }}
+
+        return json.dumps(trs)
+
+
     def to_serializable(self):
         """Returna serializable dictionary representation of this Transaction."""
         trx_dict = {'type':      self.type,
@@ -646,9 +707,9 @@ class Transaction(Event):
         """Create a Transaction Event from a dictionary."""
         assert trx_dict.get('type') == 'transaction', 'ERROR - Dictionary must assert that it represents a Transaction, but type is {}.'.format(trx_dict.get('type'))
 
-        trx = Transaction(        trx_dict.get('timestamp'),  \
-                          id     =trx_dict.get('id'),         \
-                          amount =trx_dict.get('amount'))
+        trx = Transaction(        trx_dict.get('timestamp'), \
+                                  id     =trx_dict.get('id'), \
+                                  amount =trx_dict.get('amount'))
         return trx
 
 
