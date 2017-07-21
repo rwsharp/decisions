@@ -507,10 +507,11 @@ class Offer(Event):
          'type_discount': 1 / 0, ...}
     """
 
-    channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 1))
-    offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
 
     def __init__(self, timestamp_received, **kwargs):
+        default_channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 1))
+        default_offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
+
         valid_kwargs = {'id', 'valid_from', 'valid_until', 'difficulty', 'reward', 'progress', 'completed', 'channel', 'offer_type'}
         kwargs_name_set = set(kwargs.keys())
         assert kwargs_name_set.issubset(valid_kwargs), 'ERROR - Invalid kwargs: \n{}\n{}\n{}'.format(kwargs_name_set, valid_kwargs, kwargs_name_set - valid_kwargs)
@@ -533,10 +534,12 @@ class Offer(Event):
         self.completed = kwargs.get('completed', False)
         assert isinstance(self.completed, types.BooleanType), 'ERROR - completed must be Boolean'
 
+        self.channel = default_channel
         x = kwargs.get('channel')
         if x is not None:
             self.channel.set_equal(x)
 
+        self.offer_type = default_offer_type
         x = kwargs.get('offer_type')
         if x is not None:
             self.offer_type.set_equal(x)
@@ -630,7 +633,7 @@ class Offer(Event):
         print 'difficulty: positive numeric'
         print 'reward: positive numeric'
         print 'channel: Categorical({})'.format(offer.channel.names)
-        print 'type: Categorical({})'.format(offer.type.names)
+        print 'type: Categorical({})'.format(offer.offer_type.names)
 
 
     def is_active(self, current_time):
@@ -648,6 +651,11 @@ class TestOffer(unittest.TestCase):
         offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
 
         self.offer = Offer(timestamp, channel=offer_channel, offer_type=offer_type)
+
+
+    def test_print_help(self):
+        self.offer.print_help()
+        self.assertTrue(1)
 
 
     def test_serializaton(self):

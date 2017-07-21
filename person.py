@@ -173,7 +173,7 @@ class Person(object):
         ###################
 
         # view_offer_sensitivity
-        view_offer_sensitivity_names = numpy.concatenate((numpy.array(('background', 'offer_age')), Offer.channel.names))
+        view_offer_sensitivity_names = numpy.concatenate((numpy.array(('background', 'offer_age')), Offer(0).channel.names))
         default_view_offer_sensitivity = Categorical(view_offer_sensitivity_names)
         default_view_offer_sensitivity.set('offer_age', -1)
         kwargs_view_offer_sensitivity = kwargs.get('view_offer_sensitivity', None)
@@ -445,7 +445,7 @@ class Person(object):
             time_since_last_viewed_offer = Constants.END_OF_TIME - Constants.BEGINNING_OF_TIME
             last_viewed_offer_duration = 0
             viewed_active_offer = 0
-            offer_channel_weights = Offer.channel.zeros
+            offer_channel_weights = Offer(Constants.BEGINNING_OF_TIME).channel.zeros
 
         # as time since last offer increases, the effect should go to zero: x_max = T, f_of_x_max = 0
         # the offer view is most powerful immediately: x_min = 0, f_of_x_min = 1

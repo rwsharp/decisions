@@ -113,6 +113,9 @@ class Population(object):
         Simulation proceeds for n steps. The simulated duration of each step is a property of the World.
         """
         for t in range(n_ticks):
+            if t % int(n_ticks/10.0) == 0:
+                print '{} of {} days finished.'.format(self.world.world_time/24.0, n_ticks*self.world.world_time_tick/24.0)
+
             deliveries = self.read_deliveries(cleanup=True)
             self.update_people(deliveries)
             self.world.update()
