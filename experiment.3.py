@@ -74,11 +74,11 @@ def create_people_0(n):
 def create_portfolio():
     offer_channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 0))
     offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 1, 0))
-    discount_a = Offer(0, valid_from=0, valid_until=7*24, difficulty=5, reward=2, channel=offer_channel, offer_type=offer_type)
+    discount_a = Offer(0, valid_from=0, valid_until=4*7*24, difficulty=5, reward=2, channel=offer_channel, offer_type=offer_type)
 
     offer_channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 1))
     offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 1, 0))
-    discount_b = Offer(0, valid_from=0, valid_until=7*24, difficulty=5, reward=2, channel=offer_channel, offer_type=offer_type)
+    discount_b = Offer(0, valid_from=0, valid_until=4*7*24, difficulty=5, reward=2, channel=offer_channel, offer_type=offer_type)
 
     portfolio = (discount_a, discount_b)
 
