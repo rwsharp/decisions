@@ -109,7 +109,7 @@ class Population(object):
         return json_string
 
 
-    def simulate(self, n_ticks):
+    def simulate(self, n_ticks, n_proc=1):
         """Coordinate the simulation of individual reactions to offers.
 
         Simulation proceeds for n steps. The simulated duration of each step is a property of the World.
@@ -123,7 +123,10 @@ class Population(object):
                 last = now
 
             deliveries = self.read_deliveries(cleanup=True)
-            self.update_people(deliveries)
+            if n_proc > 1:
+                self.update_people(deliveries, n_proc)
+            else:
+                self.update_people_serial(deliveries)
             self.world.update()
             self.report()
 
@@ -157,12 +160,11 @@ class Population(object):
         return deliveries
 
 
-    def update_people(self, deliveries):
+    def update_people(self, deliveries, n_proc=2):
         """Simulate a single timestep for everybody in the population."""
         self.deliver_offers(deliveries)
 
         n_people = len(self.people)
-        n_proc = 8
         chunk_size = n_people/n_proc
 
         people_chunks = [self.people.keys()[i:min(i + chunk_size, n_people)] for i in xrange(0, n_people, chunk_size)]
@@ -171,8 +173,9 @@ class Population(object):
         procs = [multiprocessing.Process(target=self.people_loop, args=(people_chunks[p],)) for p in range(n_proc)]
         for proc in procs:
             proc.start()
+
         for proc in procs:
-            proc.join()
+           proc.join()
 
 
     def people_loop(self, person_id_list):

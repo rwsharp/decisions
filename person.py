@@ -380,7 +380,6 @@ class Person(object):
 
 
     def view_offer(self, world):
-
         logging.debug('View offer decision at time t = {}'.format(world.world_time))
 
         offer = self.last_unviewed_offer
@@ -388,7 +387,8 @@ class Person(object):
             offer_age = world.world_time - offer.timestamp
         else:
             # there is no offer to view, we're done here
-            return None
+            offer_viewed = None
+            return offer_viewed
 
         beta = self.view_offer_sensitivity.weights
         x    = numpy.concatenate((numpy.array((1,
