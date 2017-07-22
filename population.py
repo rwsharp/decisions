@@ -14,6 +14,8 @@ import os.path
 import glob
 import shutil
 import json
+import multiprocessing
+import time
 
 from externalities import World, Offer, Transaction, Event, Categorical
 from person import Person
@@ -112,9 +114,13 @@ class Population(object):
 
         Simulation proceeds for n steps. The simulated duration of each step is a property of the World.
         """
+        start = time.time()
+        last = start
         for t in range(n_ticks):
             if t % int(n_ticks/10.0) == 0:
-                print '{} of {} days finished.'.format(self.world.world_time/24.0, n_ticks*self.world.world_time_tick/24.0)
+                now = time.time()
+                print '{} of {} days finished (time = {:.4}, delta = {:.4}).'.format(self.world.world_time/24.0, n_ticks*self.world.world_time_tick/24.0, round(now-start,3), round(now-last,3))
+                last = now
 
             deliveries = self.read_deliveries(cleanup=True)
             self.update_people(deliveries)
@@ -153,10 +159,36 @@ class Population(object):
 
     def update_people(self, deliveries):
         """Simulate a single timestep for everybody in the population."""
+        self.deliver_offers(deliveries)
+
+        n_people = len(self.people)
+        n_proc = 8
+        chunk_size = n_people/n_proc
+
+        people_chunks = [self.people.keys()[i:min(i + chunk_size, n_people)] for i in xrange(0, n_people, chunk_size)]
+        all_people = set(reduce(lambda a, b: a+b, people_chunks))
+        assert all_people == set(self.people.keys()), 'ERROR - Some people were lost during chunking.'
+        procs = [multiprocessing.Process(target=self.people_loop, args=(people_chunks[p],)) for p in range(n_proc)]
+        for proc in procs:
+            proc.start()
+        for proc in procs:
+            proc.join()
+
+
+    def people_loop(self, person_id_list):
+        """Do the person update for everybody in the id list - handy form for parallelism."""
+        transcript = list()
+        for person_id in person_id_list:
+            person = self.people[person_id]
+            transcript.extend(person.update(self.world))
+        self.write_to_transcript_file(transcript)
+
+
+    def update_people_serial(self, deliveries):
+        """Simulate a single timestep for everybody in the population."""
 
         self.deliver_offers(deliveries)
 
-        # todo: parallelize this loop
         transcript = list()
         for id, person in self.people.iteritems():
             transcript.extend(person.update(self.world))
