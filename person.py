@@ -293,19 +293,32 @@ class Person(object):
         Determine which offers are open, whether they've been completed, and add transaction amount toward completion.
         """
 
+        # Offer completion rules
+        # BOGO: at least purchase in the validity period that is greated than difficulty
+        # discount: cumulative purchases in the validity period are greater than or equal to difficulty
+        # information: nothing to do, so cannot be completed, also no reward
+
         transcript_items = list()
 
         # we need to go through all events since an offer could be open ended
         for event in self.history:
             if isinstance(event, Offer):
+                offer_type = event.offer_type
                 if event.reward > 0:
                     if event.is_active(world.world_time):
-                        event.progress += transaction.amount
-                        if event.progress >= event.difficulty:
-                            if not event.completed:
-                                event.completed = True
-                                transcript = event.offer_completed_transacript(world, self.id)
-                                transcript_items.append(transcript)
+                        # update offer progress
+                        if offer_type.get('bogo') == 1:
+                            event.progress = transaction.amount if transaction.amount > event.difficulty else 0.00
+                        elif offer_type.get('discount') == 1:
+                            event.progress += transaction.amount
+
+                        # has the offer been completed?
+                        if offer_type.get('informational') == 0:
+                            if event.progress >= event.difficulty:
+                                if not event.completed:
+                                    event.completed = True
+                                    transcript = event.offer_completed_transacript(world, self.id)
+                                    transcript_items.append(transcript)
 
         return transcript_items
 
