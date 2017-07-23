@@ -77,15 +77,9 @@ def get_stats(population, transcript_file_name, delivery_file_name):
 
             if record['event'] == 'offer viewed':
                 stats[record['person']]['viewed'] += 1
-                if stats[record['person']]['viewed'] > 1:
-                    print record['person']
-                    raise
 
             if record['event'] == 'offer completed':
                 stats[record['person']]['completed'] += 1
-                if stats[record['person']]['completed'] > 1:
-                    print record['person']
-                    raise
 
             if record['event'] == 'transaction':
                 stats[record['person']]['trx'] += 1
