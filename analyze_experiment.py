@@ -35,7 +35,7 @@ def main(args):
     # for field in ['viewed', 'trx', 'spend']:
     #     group_stats[group][field].append(person_stats[field])
 
-    for field in ['received', 'viewed', 'trx', 'spend']:
+    for field in ['received', 'viewed', 'completed', 'trx', 'spend']:
         print field
         for group, gstats in group_stats.iteritems():
             data = gstats[field]
@@ -58,10 +58,11 @@ def get_stats(population, transcript_file_name, delivery_file_name):
     stats = dict([(person_id, {'group': treatments.get(person_id, 'control'),
                                'received': 0,
                                'viewed': 0,
+                               'completed': 0,
                                'trx': 0,
                                'spend': 0.00}) for person_id in population.people])
 
-    fields = ['received', 'viewed', 'trx', 'spend']
+    fields = ['received', 'viewed', 'completed', 'trx', 'spend']
 
     with open(transcript_file_name, 'r') as transcript_file:
         for line_number, line in enumerate(transcript_file):
@@ -80,6 +81,12 @@ def get_stats(population, transcript_file_name, delivery_file_name):
                     print record['person']
                     raise
 
+            if record['event'] == 'offer completed':
+                stats[record['person']]['completed'] += 1
+                if stats[record['person']]['completed'] > 1:
+                    print record['person']
+                    raise
+
             if record['event'] == 'transaction':
                 stats[record['person']]['trx'] += 1
                 stats[record['person']]['spend'] += record['value']['amount']
@@ -90,11 +97,16 @@ def get_stats(population, transcript_file_name, delivery_file_name):
     for group in groups:
         if group != 'control':
             group_name = 'offer_{}'.format(group_ctr)
+            offer_type = population.portfolio[group].offer_type
+            for offer_type_name in ('bogo', 'discount', 'informational'):
+                if offer_type.get(offer_type_name) == 1:
+                    break
             group_ctr += 1
         else:
             group_name = group
+            offer_type_name = None
         group_names[group] = group_name
-        print '{}: {}'.format(group_names[group], group)
+        print '{} ({}): {}'.format(group_names[group], offer_type_name, group)
     print
 
     group_stats = dict([(group_names[group], dict([(field, list()) for field in fields])) for group in groups])
