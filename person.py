@@ -362,12 +362,12 @@ class Person(object):
         viewed_offer_event = self.view_offer(world)
         if viewed_offer_event:
             transcript_items.append(viewed_offer_event.viewed_offer_transcript(world, self.id))
-            logging.debug('Viewed offer at {}: {}'.format(world.world_time, self.last_viewed_offer.__dict__))
+            # logging.debug('Viewed offer at {}: {}'.format(world.world_time, self.last_viewed_offer.__dict__))
 
         purchase_event = self.make_purchase(world)
         if purchase_event:
             transcript_items.append(purchase_event.transcript(self.id))
-            logging.debug('Made purchase at {}: {}'.format(world.world_time, self.last_transaction.__dict__))
+            # logging.debug('Made purchase at {}: {}'.format(world.world_time, self.last_transaction.__dict__))
 
             transcript_items.extend(self.update_offer_state(world, purchase_event))
 
@@ -393,7 +393,7 @@ class Person(object):
 
 
     def view_offer(self, world):
-        logging.debug('View offer decision at time t = {}'.format(world.world_time))
+        # logging.debug('View offer decision at time t = {}'.format(world.world_time))
 
         offer = self.last_unviewed_offer
         if offer is not None:
@@ -409,17 +409,17 @@ class Person(object):
                                   offer.channel.weights))
         p = 1.0 / (1.0 + numpy.exp(-numpy.dot(beta, x)))
 
-        logging.debug('        beta = {}'.format(beta))
-        logging.debug('           x = {}'.format(x))
-        logging.debug('      beta*x = {}'.format(beta*x))
-        logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
-        logging.debug('           p = {}'.format(p))
+        # logging.debug('        beta = {}'.format(beta))
+        # logging.debug('           x = {}'.format(x))
+        # logging.debug('      beta*x = {}'.format(beta*x))
+        # logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
+        # logging.debug('           p = {}'.format(p))
 
         # flip a coin to decide if the offer was viewed
         viewed_offer = True if numpy.random.random() < p else False
 
         if viewed_offer:
-            logging.debug('Offer viewed')
+            # logging.debug('Offer viewed')
             offer_viewed = self.last_unviewed_offer
             self.last_viewed_offer = offer_viewed
             # by setting the last unviewed offer to None here, we're assuming that only the most recently
@@ -438,7 +438,7 @@ class Person(object):
         Depends on time of day, segment, income, how long since last purchase, offers
         """
 
-        logging.debug('Made purchase decision at time t = {}'.format(world.world_time))
+        # logging.debug('Made purchase decision at time t = {}'.format(world.world_time))
 
         # How long since last transaction
         if self.last_transaction is not None:
@@ -479,17 +479,17 @@ class Person(object):
                             viewed_active_offer))
         p = 1.0 / (1.0 + numpy.exp(-numpy.dot(beta, x)))
 
-        logging.debug('        beta = {}'.format(beta))
-        logging.debug('           x = {}'.format(x))
-        logging.debug('      beta*x = {}'.format(beta*x))
-        logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
-        logging.debug('           p = {}'.format(p))
+        # logging.debug('        beta = {}'.format(beta))
+        # logging.debug('           x = {}'.format(x))
+        # logging.debug('      beta*x = {}'.format(beta*x))
+        # logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
+        # logging.debug('           p = {}'.format(p))
 
         # flip a coin to decide if a purchase was made
         made_purchase = True if numpy.random.random() < p else False
 
         if made_purchase:
-            logging.debug('Made purchase')
+            # logging.debug('Made purchase')
             # Determine if this is an outlier order or regular order
             if numpy.random.random() < self.outlier_frequency:
                 purchase_amount = self.outlier_purchase_amount(world)
@@ -517,7 +517,7 @@ class Person(object):
         3: taste components
         """
 
-        logging.debug('Purchase amount decision at time t = {}'.format(world.world_time))
+        # logging.debug('Purchase amount decision at time t = {}'.format(world.world_time))
 
         # average purchase increases with income, but has a minimum (min price of a product) and tops out at some level:
         # linear with min and max plateaus at thresholds
@@ -537,11 +537,11 @@ class Person(object):
         # Cannot allow a non-positive mean purchase, so set the lower limit
         mean = max(min_mean_purchase, numpy.dot(beta, x))
 
-        logging.debug('        beta = {}'.format(beta))
-        logging.debug('           x = {}'.format(x))
-        logging.debug('      beta*x = {}'.format(beta*x))
-        logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
-        logging.debug('        mean = {}'.format(mean))
+        # logging.debug('        beta = {}'.format(beta))
+        # logging.debug('           x = {}'.format(x))
+        # logging.debug('      beta*x = {}'.format(beta*x))
+        # logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
+        # logging.debug('        mean = {}'.format(mean))
 
         # simple relationship between mean and var reflects the increased options for purchase to achieve higher mean
         var = 2.0 * mean
@@ -556,7 +556,7 @@ class Person(object):
         # all purchases are rounded to a whole number of cents
         amount = max(0.05, round(numpy.random.gamma(shape=k, scale=theta, size=None), 2))
 
-        logging.debug('Purcahse amount = {}'.format(amount))
+        # logging.debug('Purcahse amount = {}'.format(amount))
 
         return amount
 
@@ -570,7 +570,7 @@ class Person(object):
         mean_group_size = 30
         group_size = numpy.random.poisson(mean_group_size)
 
-        logging.debug('Purchase amount decision at time t = {}'.format(world.world_time))
+        # logging.debug('Purchase amount decision at time t = {}'.format(world.world_time))
 
         # average purchase increases with income, but has a minimum (min price of a product) and tops out at some level:
         # linear with min and max plateaus at thresholds
@@ -590,11 +590,11 @@ class Person(object):
         # Cannot allow a non-positive mean purchase, so set the lower limit
         mean = max(min_mean_purchase, numpy.dot(beta, x))
 
-        logging.debug('        beta = {}'.format(beta))
-        logging.debug('           x = {}'.format(x))
-        logging.debug('      beta*x = {}'.format(beta*x))
-        logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
-        logging.debug('        mean = {}'.format(mean))
+        # logging.debug('        beta = {}'.format(beta))
+        # logging.debug('           x = {}'.format(x))
+        # logging.debug('      beta*x = {}'.format(beta*x))
+        # logging.debug('dot(beta, x) = {}'.format(numpy.dot(beta, x)))
+        # logging.debug('        mean = {}'.format(mean))
 
         # simple relationship between mean and var reflects the increased options for purchase to achieve higher mean
         var = 2.0 * mean
@@ -609,7 +609,7 @@ class Person(object):
         # all purchases are rounded to a whole number of cents
         amount = max(0.05, round(numpy.sum(numpy.random.gamma(shape=k, scale=theta, size=group_size)), 2))
 
-        logging.debug('Purcahse amount = {}'.format(amount))
+        # logging.debug('Purcahse amount = {}'.format(amount))
 
         return amount
 

@@ -202,7 +202,6 @@ class Population(object):
         with open(self.transcript_file_name, 'a') as transcript_file:
             print >> transcript_file, '\n'.join(transcript)
 
-
     def deliver_offers(self, deliveries):
         """Go through the offer list and deliver to recipients."""
 
