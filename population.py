@@ -117,7 +117,12 @@ class Population(object):
         start = time.time()
         last = start
         for t in range(n_ticks):
-            if t % int(n_ticks/10.0) == 0:
+            if n_ticks >= 100:
+                print_every = int(n_ticks/10.0)
+            else:
+                print_every = n_ticks
+
+            if t % print_every == 0:
                 now = time.time()
                 print '{} of {} days finished (time = {:.4}, delta = {:.4}).'.format(self.world.world_time/24.0, n_ticks*self.world.world_time_tick/24.0, round(now-start,3), round(now-last,3))
                 last = now
