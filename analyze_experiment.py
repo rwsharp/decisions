@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 from datetime import datetime, timedelta
 import json
+import os
 
 from population import Population
 
@@ -29,7 +30,7 @@ def main(args):
         print '    {:3}: {:.6}'.format(di, ai)
     print
 
-    stats, group_stats = get_stats(population, args.transcript_file, args.delivery_file)
+    stats, group_stats, reward = get_stats(population, args.transcript_file, args.delivery_file)
 
     # group = person_stats['group']
     # for field in ['viewed', 'trx', 'spend']:
@@ -41,6 +42,14 @@ def main(args):
             data = gstats[field]
             print '{}: mean={:.6}, median={:.6}, stdev={:.6}'.format(group, np.mean(data), np.median(data), np.std(data))
         print
+
+
+    delimiter = ','
+    data_path = os.path.split(args.population_file)[0]
+    reward_file_name = os.path.join(data_path, 'reward.csv')
+    with open(reward_file_name, 'w') as reward_file:
+        for tx in reward:
+            print >> reward_file, delimiter.join(map(str, tx))
 
     return 0
 
@@ -64,6 +73,8 @@ def get_stats(population, transcript_file_name, delivery_file_name):
 
     fields = ['received', 'viewed', 'completed', 'trx', 'spend']
 
+    revenue_history = dict()
+
     with open(transcript_file_name, 'r') as transcript_file:
         for line_number, line in enumerate(transcript_file):
             text = line.strip()
@@ -80,10 +91,16 @@ def get_stats(population, transcript_file_name, delivery_file_name):
 
             if record['event'] == 'offer completed':
                 stats[record['person']]['completed'] += 1
+                t = record['time']
+                revenue_history.setdefault(t, list())
+                revenue_history[t].append(-record['value']['reward'])
 
             if record['event'] == 'transaction':
                 stats[record['person']]['trx'] += 1
                 stats[record['person']]['spend'] += record['value']['amount']
+                t = record['time']
+                revenue_history.setdefault(t, list())
+                revenue_history[t].append(record['value']['amount'])
 
     groups = set([person_stats['group'] for person_stats in stats.values()])
     group_names = dict()
@@ -111,7 +128,14 @@ def get_stats(population, transcript_file_name, delivery_file_name):
         for field in fields:
             group_stats[group_name][field].append(person_stats[field])
 
-    return stats, group_stats
+    min_t = min(revenue_history.keys())
+    cumulative_reward = [(min_t,0),]
+    for t, rev in sorted(revenue_history.iteritems()):
+        np.random.shuffle(rev)
+        for x in rev:
+            cumulative_reward.append((t, cumulative_reward[-1][1] + x))
+
+    return stats, group_stats, cumulative_reward
 
 
 def get_args():
