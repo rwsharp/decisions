@@ -597,6 +597,7 @@ class Offer(Event):
 
         return offer_dict
 
+
     @staticmethod
     def from_dict(offer_dict):
         assert offer_dict.get('type') == 'offer', 'ERROR - Dictionary must assert that it represents an Offer, but type is {}.'.format(offer_dict.get('type'))

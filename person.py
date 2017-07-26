@@ -468,7 +468,7 @@ class Person(object):
         # let's make this 3 days after the offer expires = offer_length + 24/float(world.world_time_tick) * 3
         last_viewed_offer_strength = self.bounded_response(time_since_last_viewed_offer,
                                                            min_x=0,
-                                                           max_x=last_viewed_offer_duration + 24/float(world.world_time_tick)*3,
+                                                           max_x=last_viewed_offer_duration + 24/float(world.world_time_tick + 1)*3,
                                                            f_of_min_x=1.0,
                                                            f_of_max_x=0.0)
 
