@@ -370,7 +370,8 @@ def create_portfolio():
 
     offer_channel = Categorical(('web', 'email', 'mobile', 'social'), (1, 1, 1, 1))
     offer_type = Categorical(('bogo', 'discount', 'informational'), (0, 0, 1))
-    info_e = Offer(0, valid_from=0, valid_until=4*7*24, difficulty=0, reward=0, channel=offer_channel, offer_type=offer_type)
+    # valid for 1 day = 1*24 hours
+    info_e = Offer(0, valid_from=0, valid_until=3*24, difficulty=0, reward=0, channel=offer_channel, offer_type=offer_type)
 
     portfolio = (bogo_a, bogo_b, discount_c, discount_d, info_e)
 
@@ -401,6 +402,40 @@ def assign_offers_to_subpopulation(population, subpopulation, deliveries_file_na
         if numpy.random.random() < 1.0 - control_fraction:
             # make random deliveries to the rest
             deliveries.append((person_id, numpy.random.choice(offer_ids)))
+
+    # write the deliveries file
+    with open(deliveries_file_name, 'w') as deliveries_file:
+        for delivery in deliveries:
+            print >> deliveries_file, delimiter.join(map(str, delivery))
+
+    # make a copy of the delivery file
+    shutil.copy(deliveries_file_name, deliveries_log_file_name)
+
+
+def assign_oracle_offers_to_subpopulation(population, subpopulation, optimal_offer_id, deliveries_file_name, deliveries_log_file_name, control_fraction=0.25, delimiter='|', clean_path=True):
+
+    if clean_path:
+        data_file_names = glob.glob(os.path.join(population.deliveries_path, '*'))
+        for data_file_name in data_file_names:
+            os.remove(data_file_name)
+
+    offer_ids = population.portfolio.keys()
+
+    # update the validity dates of the offers
+    now = population.world.world_time
+    for offer in population.portfolio.values():
+        offer_length = offer.valid_until - offer.valid_from
+        offer.valid_from = now
+        offer.valid_until = now + offer_length
+
+    # make random delivery decisions
+    deliveries = list()
+    for person_id in subpopulation:
+        assert person_id in population.people, 'ERROR - an indiviual in the desired subpopulation is not part of the general population: {}'.format(person_id)
+        # hold out a fraction of people as control
+        if numpy.random.random() < 1.0 - control_fraction:
+            # make random deliveries to the rest
+            deliveries.append((person_id, optimal_offer_id))
 
     # write the deliveries file
     with open(deliveries_file_name, 'w') as deliveries_file:
@@ -451,6 +486,14 @@ def main(args):
     with open(population_file_name, 'w') as population_file:
         print >> population_file, population.to_json()
 
+    # find the id for the optimal offer
+    optimal_offer_id = None
+    for offer_id, offer in population.portfolio.iteritems():
+        if (offer.offer_type.get('bogo') == 1):
+            if all([c == 1 for c in offer.channel.weights]):
+                optimal_offer_id = offer_id
+                break
+    assert optimal_offer_id is not None, 'ERROR - failed to find the optimal offer'
 
     # main simulatio loop
     has_received_offer = set()
@@ -470,7 +513,9 @@ def main(args):
             subpop = numpy.random.choice(list(subpop_remaining), size=min(sample_size_per_day, len(subpop_remaining)), replace=False)
 
             # make deliveries
-            assign_offers_to_subpopulation(population, subpop, deliveries_file_name, deliveries_log_file_name)
+            # assign_offers_to_subpopulation(population, subpop, deliveries_file_name, deliveries_log_file_name)
+            assign_oracle_offers_to_subpopulation(population, subpop, optimal_offer_id, deliveries_file_name, deliveries_log_file_name)
+
 
             has_received_offer = has_received_offer.union(set(subpop))
             subpop_remaining = set(population.people.keys()) - has_received_offer
